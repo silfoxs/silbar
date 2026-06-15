@@ -94,6 +94,14 @@ struct DashboardView: View {
                 percent: nil,
                 tint: .cyan
             )
+            if let temp = monitor.snapshot.cpuTemperatureCelsius {
+                MetricCircle(
+                    title: "温度",
+                    value: "\(Int(temp))°",
+                    percent: nil,
+                    tint: .red
+                )
+            }
             MetricCircle(
                 title: "CPU",
                 value: "\(Int(monitor.snapshot.cpuPercent.rounded()))%",
