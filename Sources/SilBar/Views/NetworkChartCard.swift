@@ -41,8 +41,7 @@ private struct BarChart: View {
                             .fill(.orange.gradient)
                             .frame(height: barHeight(sample.uploadBytesPerSecond, maxValue: maxValue, availableHeight: proxy.size.height))
                     }
-                    .frame(width: barGroupWidth)
-                    .frame(maxHeight: .infinity, alignment: .bottom)
+                    .frame(width: barGroupWidth, height: proxy.size.height)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
@@ -60,8 +59,10 @@ private struct BarChart: View {
             return 3
         }
 
+        let totalSpacing: CGFloat = 2
+        let maxBarHeight = (availableHeight - totalSpacing) / 2
         let ratio = Double(value) / Double(maxValue)
-        return max(3, availableHeight * CGFloat(ratio) * 0.92)
+        return max(3, maxBarHeight * CGFloat(ratio) * 0.92)
     }
 }
 
