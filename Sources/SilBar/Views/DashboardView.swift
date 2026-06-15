@@ -135,6 +135,11 @@ private struct SettingsView: View {
     @AppStorage(StatusBarPreferences.showCPUTemperature) private var showCPUTemperature = false
     @AppStorage(StatusBarPreferences.showMemoryUsage) private var showMemoryUsage = true
     @AppStorage(StatusBarPreferences.showStorageUsage) private var showStorageUsage = true
+    @State private var metricOrder = StatusBarPreferences.orderedMetricKinds()
+    @State private var draggedKind: StatusBarMetricKind?
+    @State private var dragStartIndex: Int?
+    @State private var dragTargetIndex: Int?
+    @State private var dragTranslation: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -142,47 +147,131 @@ private struct SettingsView: View {
                 .font(.headline)
 
             VStack(spacing: 8) {
-                SettingsToggleRow(
-                    title: "网络上传下载量",
-                    systemImage: "arrow.up.arrow.down",
-                    isOn: $showNetworkTransfer
-                )
-                SettingsToggleRow(
-                    title: "CPU 占用",
-                    systemImage: "cpu",
-                    isOn: $showCPUUsage
-                )
-                SettingsToggleRow(
-                    title: "CPU 温度",
-                    systemImage: "thermometer.medium",
-                    isOn: $showCPUTemperature
-                )
-                SettingsToggleRow(
-                    title: "内存占用",
-                    systemImage: "memorychip",
-                    isOn: $showMemoryUsage
-                )
-                SettingsToggleRow(
-                    title: "硬盘占用",
-                    systemImage: "internaldrive",
-                    isOn: $showStorageUsage
-                )
+                ForEach(metricOrder) { kind in
+                    SettingsMetricRow(
+                        kind: kind,
+                        isOn: binding(for: kind)
+                    )
+                    .contentShape(Rectangle())
+                    .opacity(draggedKind == kind ? 0.76 : 1)
+                    .offset(y: offset(for: kind))
+                    .zIndex(draggedKind == kind ? 1 : 0)
+                    .animation(.snappy(duration: 0.16), value: dragTargetIndex)
+                    .simultaneousGesture(reorderGesture(for: kind))
+                }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
     }
+
+    private func binding(for kind: StatusBarMetricKind) -> Binding<Bool> {
+        switch kind {
+        case .network:
+            $showNetworkTransfer
+        case .cpu:
+            $showCPUUsage
+        case .temp:
+            $showCPUTemperature
+        case .memory:
+            $showMemoryUsage
+        case .storage:
+            $showStorageUsage
+        }
+    }
+
+    private func reorderGesture(for kind: StatusBarMetricKind) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                if draggedKind == nil {
+                    draggedKind = kind
+                    dragStartIndex = metricOrder.firstIndex(of: kind)
+                    dragTargetIndex = dragStartIndex
+                }
+
+                guard
+                    draggedKind == kind,
+                    let startIndex = dragStartIndex
+                else {
+                    return
+                }
+
+                let targetIndex = targetIndex(startIndex: startIndex, translation: value.translation.height)
+                dragTranslation = value.translation.height
+                if dragTargetIndex != targetIndex {
+                    dragTargetIndex = targetIndex
+                }
+            }
+            .onEnded { value in
+                defer {
+                    draggedKind = nil
+                    dragStartIndex = nil
+                    dragTargetIndex = nil
+                    dragTranslation = 0
+                }
+
+                guard
+                    draggedKind == kind,
+                    let startIndex = dragStartIndex,
+                    let currentIndex = metricOrder.firstIndex(of: kind)
+                else {
+                    return
+                }
+
+                let targetIndex = targetIndex(startIndex: startIndex, translation: value.translation.height)
+
+                if targetIndex != currentIndex {
+                    metricOrder.move(
+                        fromOffsets: IndexSet(integer: currentIndex),
+                        toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex
+                    )
+                }
+                StatusBarPreferences.setMetricOrder(metricOrder)
+            }
+    }
+
+    private func offset(for kind: StatusBarMetricKind) -> CGFloat {
+        guard
+            let draggedKind,
+            let startIndex = dragStartIndex,
+            let targetIndex = dragTargetIndex,
+            let index = metricOrder.firstIndex(of: kind)
+        else {
+            return 0
+        }
+
+        if kind == draggedKind {
+            return dragTranslation
+        }
+
+        if targetIndex > startIndex, index > startIndex, index <= targetIndex {
+            return -Self.rowStride
+        }
+
+        if targetIndex < startIndex, index >= targetIndex, index < startIndex {
+            return Self.rowStride
+        }
+
+        return 0
+    }
+
+    private func targetIndex(startIndex: Int, translation: CGFloat) -> Int {
+        let offset = Int((translation / Self.rowStride).rounded())
+        return min(max(startIndex + offset, 0), metricOrder.count - 1)
+    }
+
+    private static let rowStride: CGFloat = 46
+
 }
 
-private struct SettingsToggleRow: View {
-    let title: String
-    let systemImage: String
+private struct SettingsMetricRow: View {
+    let kind: StatusBarMetricKind
     @Binding var isOn: Bool
 
     var body: some View {
         HStack(spacing: 12) {
-            Label(title, systemImage: systemImage)
+            Label(kind.title, systemImage: kind.systemImage)
                 .font(.callout.weight(.medium))
 
             Spacer(minLength: 12)

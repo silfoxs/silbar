@@ -1,11 +1,45 @@
 import SwiftUI
 
-enum StatusBarMetricKind: CaseIterable {
+enum StatusBarMetricKind: String, CaseIterable, Identifiable {
     case network
     case cpu
     case temp
     case memory
     case storage
+
+    var id: Self {
+        self
+    }
+
+    var title: String {
+        switch self {
+        case .network:
+            "网络上传下载量"
+        case .cpu:
+            "CPU 占用"
+        case .temp:
+            "CPU 温度"
+        case .memory:
+            "内存占用"
+        case .storage:
+            "硬盘占用"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .network:
+            "arrow.up.arrow.down"
+        case .cpu:
+            "cpu"
+        case .temp:
+            "thermometer.medium"
+        case .memory:
+            "memorychip"
+        case .storage:
+            "internaldrive"
+        }
+    }
 
     var preferenceKey: String {
         switch self {

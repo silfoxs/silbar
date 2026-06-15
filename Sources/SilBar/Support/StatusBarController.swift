@@ -9,6 +9,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private let popover = NSPopover()
     private let mainHostingView: NSHostingView<MainStatusIcon>
     private var metricItems: [StatusBarMetricKind: MetricStatusItem] = [:]
+    private var visibleMetricKinds: [StatusBarMetricKind] = []
     private var snapshotCancellable: AnyCancellable?
     private var preferencesCancellable: AnyCancellable?
     private var localEventMonitor: Any?
@@ -24,7 +25,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         super.init()
 
         configureMainStatusButton()
-        createMetricStatusItems()
+        rebuildMetricStatusItems()
         configurePopover()
         updateStatusItems(with: monitor.snapshot)
 
@@ -69,8 +70,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         mainStatusItem.length = max(28, mainHostingView.fittingSize.width + 8)
     }
 
-    private func createMetricStatusItems() {
-        for kind in StatusBarMetricKind.allCases {
+    private func rebuildMetricStatusItems() {
+        for metricItem in metricItems.values {
+            NSStatusBar.system.removeStatusItem(metricItem.item)
+        }
+
+        metricItems.removeAll()
+        visibleMetricKinds = currentVisibleMetricKinds()
+
+        for kind in visibleMetricKinds.reversed() {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             let hostingView = NSHostingView(rootView: StatusBarMetricContent(kind: kind, snapshot: monitor.snapshot))
             guard let button = item.button else {
@@ -107,23 +115,26 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func updateStatusItems(with snapshot: MetricSnapshot) {
-        for kind in StatusBarMetricKind.allCases {
+        let currentKinds = currentVisibleMetricKinds()
+        if currentKinds != visibleMetricKinds {
+            rebuildMetricStatusItems()
+        }
+
+        for kind in visibleMetricKinds {
             guard let metricItem = metricItems[kind] else {
                 continue
             }
 
-            if kind.isEnabled {
-                metricItem.hostingView.rootView = StatusBarMetricContent(kind: kind, snapshot: snapshot)
-                metricItem.hostingView.layoutSubtreeIfNeeded()
+            metricItem.hostingView.rootView = StatusBarMetricContent(kind: kind, snapshot: snapshot)
+            metricItem.hostingView.layoutSubtreeIfNeeded()
 
-                let fittingWidth = metricItem.hostingView.fittingSize.width
-                metricItem.item.length = max(kind.minimumWidth, fittingWidth + 8)
-                metricItem.item.isVisible = true
-            } else {
-                metricItem.item.length = 0
-                metricItem.item.isVisible = false
-            }
+            let fittingWidth = metricItem.hostingView.fittingSize.width
+            metricItem.item.length = max(kind.minimumWidth, fittingWidth + 8)
         }
+    }
+
+    private func currentVisibleMetricKinds() -> [StatusBarMetricKind] {
+        StatusBarPreferences.orderedMetricKinds().filter(\.isEnabled)
     }
 
     @objc private func togglePopover(_ sender: Any?) {
