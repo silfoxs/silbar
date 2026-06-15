@@ -51,6 +51,7 @@ private struct BarChart: View {
                     .frame(height: 1)
             }
         }
+        .animation(nil, value: samples.map(\.id))
         .accessibilityLabel("上传下载柱状图")
     }
 
