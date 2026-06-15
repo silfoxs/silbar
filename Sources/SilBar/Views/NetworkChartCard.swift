@@ -5,7 +5,7 @@ struct NetworkChartCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("上传 / 下载采样", systemImage: "chart.bar.xaxis")
+            Label("上传 / 下载", systemImage: "chart.bar.xaxis")
                 .font(.headline)
 
             BarChart(samples: snapshot.networkHistory)
@@ -52,7 +52,7 @@ private struct BarChart: View {
                     .frame(height: 1)
             }
         }
-        .accessibilityLabel("上传下载采样柱状图")
+        .accessibilityLabel("上传下载柱状图")
     }
 
     private func barHeight(_ value: UInt64, maxValue: UInt64, availableHeight: CGFloat) -> CGFloat {
