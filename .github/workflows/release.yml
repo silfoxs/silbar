@@ -32,8 +32,17 @@ jobs:
         id: build-installer
         run: |
           PACKAGE_PATH="$(./script/build_and_run.sh package | tail -n 1)"
+          PACKAGE_NAME="$(basename "$PACKAGE_PATH")"
+          APP_NAME="SilBar"
+          APP_VERSION="${PACKAGE_NAME#"$APP_NAME"-}"
+          APP_VERSION="${APP_VERSION%-arm64.dmg}"
+          APP_VERSION="${APP_VERSION%-x86_64.dmg}"
+          APP_VERSION="${APP_VERSION%-universal.dmg}"
+
           echo "package_path=$PACKAGE_PATH" >> "$GITHUB_OUTPUT"
-          echo "package_name=$(basename "$PACKAGE_PATH")" >> "$GITHUB_OUTPUT"
+          echo "package_name=$PACKAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
+          echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -46,7 +55,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: main-latest
-          RELEASE_TITLE: SilBar main latest
+          RELEASE_TITLE: ${{ steps.build-installer.outputs.app_name }} ${{ steps.build-installer.outputs.app_version }}
           PACKAGE_PATH: ${{ steps.build-installer.outputs.package_path }}
           PACKAGE_NAME: ${{ steps.build-installer.outputs.package_name }}
         run: |
