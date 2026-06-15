@@ -87,7 +87,7 @@ struct DashboardView: View {
     }
 
     private var metricStrip: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             MetricCircle(
                 title: "网速",
                 value: ByteFormatter.speed(monitor.snapshot.downloadBytesPerSecond),
@@ -96,7 +96,7 @@ struct DashboardView: View {
             )
             if let temp = monitor.snapshot.cpuTemperatureCelsius {
                 MetricCircle(
-                    title: "温度",
+                    title: "TEMP",
                     value: "\(Int(temp))°",
                     percent: nil,
                     tint: .red
@@ -221,30 +221,30 @@ private struct MetricCircle: View {
     var body: some View {
         ZStack {
             Circle()
-                .stroke(.primary.opacity(0.12), lineWidth: 8)
+                .stroke(.primary.opacity(0.12), lineWidth: 6)
 
             if let percent {
                 Circle()
                     .trim(from: 0, to: min(max(percent / 100, 0), 1))
-                    .stroke(tint.gradient, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .stroke(tint.gradient, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                     .rotationEffect(.degrees(-90))
             } else {
                 Circle()
-                    .stroke(tint.opacity(0.35), style: StrokeStyle(lineWidth: 8, lineCap: .round, dash: [7, 9]))
+                    .stroke(tint.opacity(0.35), style: StrokeStyle(lineWidth: 6, lineCap: .round, dash: [7, 9]))
             }
 
             VStack(spacing: 1) {
                 Text(value)
-                    .font(.system(size: 14, weight: .semibold, design: .rounded))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
                 Text(title)
                     .font(.caption2.weight(.medium))
                     .foregroundStyle(.secondary)
             }
-            .padding(10)
+            .padding(8)
         }
-        .frame(width: 86, height: 86)
+        .frame(width: 72, height: 72)
         .frame(maxWidth: .infinity)
     }
 }
