@@ -15,7 +15,11 @@ APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 APP_ICON_SOURCE="$ROOT_DIR/Sources/SilBar/Resources/AppIcon.icns"
+INSTALLER_BACKGROUND_RENDERER="$ROOT_DIR/script/create_dmg_background.swift"
+INSTALLER_LAYOUT_SCRIPT="$ROOT_DIR/script/configure_dmg.applescript"
 INSTALLER_STAGING_DIR="$DIST_DIR/package"
+INSTALLER_BACKGROUND_DIR=".background"
+INSTALLER_BACKGROUND_IMAGE="installer-background.png"
 
 usage() {
   echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|package]" >&2
@@ -47,6 +51,15 @@ detect_binary_arch() {
   else
     uname -m
   fi
+}
+
+create_installer_background() {
+  /usr/bin/swift -module-cache-path "${TMPDIR:-/tmp}/silbar-swift-module-cache" "$INSTALLER_BACKGROUND_RENDERER" "$1"
+}
+
+configure_installer_dmg() {
+  local mount_dir="$1"
+  /usr/bin/osascript "$INSTALLER_LAYOUT_SCRIPT" "$mount_dir" "$APP_NAME.app" "$mount_dir/$INSTALLER_BACKGROUND_DIR/$INSTALLER_BACKGROUND_IMAGE"
 }
 
 case "$MODE" in
@@ -126,12 +139,59 @@ if [[ "$MODE" == "package" ]]; then
   PACKAGE_VERSION="$(sanitize_filename_part "$APP_VERSION")"
   PACKAGE_ARCH="$(sanitize_filename_part "$APP_ARCH")"
   INSTALLER_PATH="$DIST_DIR/$APP_NAME-$PACKAGE_VERSION-$PACKAGE_ARCH.dmg"
+  INSTALLER_TEMP_PATH="$DIST_DIR/$APP_NAME-$PACKAGE_VERSION-$PACKAGE_ARCH-rw.dmg"
+  INSTALLER_BACKGROUND_PATH="$INSTALLER_STAGING_DIR/$INSTALLER_BACKGROUND_DIR/$INSTALLER_BACKGROUND_IMAGE"
+  INSTALLER_MOUNT_DIR=""
+  INSTALLER_VOLUME_DIR=""
 
-  rm -f "$INSTALLER_PATH"
+  cleanup_installer_mount() {
+    if [[ -n "$INSTALLER_VOLUME_DIR" && -d "$INSTALLER_VOLUME_DIR" ]]; then
+      /usr/bin/hdiutil detach "$INSTALLER_VOLUME_DIR" >/dev/null 2>&1 || true
+      INSTALLER_VOLUME_DIR=""
+    fi
+    if [[ -d "/Volumes/$APP_NAME" ]]; then
+      /usr/bin/hdiutil detach "/Volumes/$APP_NAME" >/dev/null 2>&1 || true
+    fi
+    if [[ -n "$INSTALLER_MOUNT_DIR" ]]; then
+      rmdir "$INSTALLER_MOUNT_DIR" >/dev/null 2>&1 || true
+      INSTALLER_MOUNT_DIR=""
+    fi
+  }
+
+  trap cleanup_installer_mount EXIT
+
+  rm -f "$INSTALLER_PATH" "$INSTALLER_TEMP_PATH"
   rm -rf "$INSTALLER_STAGING_DIR"
-  mkdir -p "$INSTALLER_STAGING_DIR"
+  mkdir -p "$INSTALLER_STAGING_DIR/$INSTALLER_BACKGROUND_DIR"
   cp -R "$APP_BUNDLE" "$INSTALLER_STAGING_DIR/"
-  hdiutil create -volname "$APP_NAME" -srcfolder "$INSTALLER_STAGING_DIR" -ov -format UDZO "$INSTALLER_PATH" >/dev/null
+  ln -s /Applications "$INSTALLER_STAGING_DIR/Applications"
+  create_installer_background "$INSTALLER_BACKGROUND_PATH"
+  /usr/bin/SetFile -a V "$INSTALLER_STAGING_DIR/$INSTALLER_BACKGROUND_DIR" >/dev/null 2>&1 || true
+
+  hdiutil create -volname "$APP_NAME" -srcfolder "$INSTALLER_STAGING_DIR" -ov -format UDRW "$INSTALLER_TEMP_PATH" >/dev/null
+
+  INSTALLER_MOUNT_DIR="$(mktemp -d "$DIST_DIR/dmg-mount.XXXXXX")"
+  ATTACH_OUTPUT="$(hdiutil attach "$INSTALLER_TEMP_PATH" -nobrowse -readwrite -mountpoint "$INSTALLER_MOUNT_DIR")"
+  if [[ -d "$INSTALLER_MOUNT_DIR/$APP_NAME.app" ]]; then
+    INSTALLER_VOLUME_DIR="$INSTALLER_MOUNT_DIR"
+  else
+    INSTALLER_VOLUME_DIR="$(printf "%s\n" "$ATTACH_OUTPUT" | awk 'NF && $NF ~ /^\// { print $NF; exit }')"
+  fi
+  if [[ -z "$INSTALLER_VOLUME_DIR" || ! -d "$INSTALLER_VOLUME_DIR/$APP_NAME.app" ]]; then
+    echo "failed to mount installer disk image" >&2
+    exit 1
+  fi
+
+  /usr/bin/SetFile -a V "$INSTALLER_VOLUME_DIR/$INSTALLER_BACKGROUND_DIR" >/dev/null 2>&1 || true
+  configure_installer_dmg "$INSTALLER_VOLUME_DIR"
+  rm -rf "$INSTALLER_VOLUME_DIR/.fseventsd" "$INSTALLER_VOLUME_DIR/.Trashes"
+  sync
+  cleanup_installer_mount
+
+  hdiutil convert "$INSTALLER_TEMP_PATH" -format UDZO -imagekey zlib-level=9 -o "$INSTALLER_PATH" >/dev/null
+  rm -f "$INSTALLER_TEMP_PATH"
+  trap - EXIT
+
   echo "$INSTALLER_PATH"
   exit 0
 fi
