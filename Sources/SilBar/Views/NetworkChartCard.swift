@@ -31,21 +31,26 @@ private struct BarChart: View {
             let maxValue = max(samples.map { max($0.uploadBytesPerSecond, $0.downloadBytesPerSecond) }.max() ?? 1, 1)
             let barGroupWidth = CGFloat(7)
 
-            HStack(alignment: .bottom, spacing: 3) {
+            HStack(alignment: .center, spacing: 3) {
                 ForEach(samples) { sample in
-                    VStack(spacing: 2) {
-                        Capsule()
-                            .fill(.cyan.gradient)
-                            .frame(height: barHeight(sample.downloadBytesPerSecond, maxValue: maxValue, availableHeight: proxy.size.height))
+                    let halfHeight = proxy.size.height / 2
+
+                    VStack(spacing: 0) {
                         Capsule()
                             .fill(.orange.gradient)
-                            .frame(height: barHeight(sample.uploadBytesPerSecond, maxValue: maxValue, availableHeight: proxy.size.height))
+                            .frame(height: barHeight(sample.uploadBytesPerSecond, maxValue: maxValue, availableHeight: halfHeight))
+                            .frame(maxHeight: halfHeight, alignment: .bottom)
+
+                        Capsule()
+                            .fill(.cyan.gradient)
+                            .frame(height: barHeight(sample.downloadBytesPerSecond, maxValue: maxValue, availableHeight: halfHeight))
+                            .frame(maxHeight: halfHeight, alignment: .top)
                     }
                     .frame(width: barGroupWidth, height: proxy.size.height)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-            .overlay(alignment: .bottom) {
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+            .overlay(alignment: .center) {
                 Rectangle()
                     .fill(.primary.opacity(0.12))
                     .frame(height: 1)
@@ -60,10 +65,9 @@ private struct BarChart: View {
             return 3
         }
 
-        let totalSpacing: CGFloat = 2
-        let maxBarHeight = (availableHeight - totalSpacing) / 2
+        let maxBarHeight = max(availableHeight - 2, 1)
         let ratio = Double(value) / Double(maxValue)
-        return max(3, maxBarHeight * CGFloat(ratio) * 0.92)
+        return min(maxBarHeight, max(3, maxBarHeight * CGFloat(ratio) * 0.92))
     }
 }
 
