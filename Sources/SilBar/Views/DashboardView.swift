@@ -176,17 +176,17 @@ private struct SettingsToggleRow: View {
         HStack(spacing: 12) {
             Label(title, systemImage: systemImage)
                 .font(.callout.weight(.medium))
-                .frame(width: 180, alignment: .leading)
+
+            Spacer(minLength: 12)
 
             Toggle("", isOn: $isOn)
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .frame(width: 54, alignment: .leading)
-
-            Spacer(minLength: 0)
+                .frame(width: 54, alignment: .trailing)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
     }
 }
