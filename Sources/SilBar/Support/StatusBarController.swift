@@ -5,10 +5,12 @@ import SwiftUI
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
     private let monitor: SystemMonitor
-    private let statusItem: NSStatusItem
+    private let mainStatusItem: NSStatusItem
     private let popover = NSPopover()
-    private let hostingView: NSHostingView<StatusBarLabel>
+    private let mainHostingView: NSHostingView<MainStatusIcon>
+    private var metricItems: [StatusBarMetricKind: MetricStatusItem] = [:]
     private var snapshotCancellable: AnyCancellable?
+    private var preferencesCancellable: AnyCancellable?
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
@@ -16,22 +18,33 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     init(monitor: SystemMonitor) {
         self.monitor = monitor
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        hostingView = NSHostingView(rootView: StatusBarLabel(snapshot: monitor.snapshot))
+        mainStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        mainHostingView = NSHostingView(rootView: MainStatusIcon())
 
         super.init()
 
-        configureStatusButton()
+        configureMainStatusButton()
+        createMetricStatusItems()
         configurePopover()
-        updateStatusLabel(with: monitor.snapshot)
+        updateStatusItems(with: monitor.snapshot)
 
         snapshotCancellable = monitor.$snapshot.sink { [weak self] snapshot in
-            self?.updateStatusLabel(with: snapshot)
+            self?.updateStatusItems(with: snapshot)
         }
+
+        preferencesCancellable = NotificationCenter.default
+            .publisher(for: UserDefaults.didChangeNotification)
+            .debounce(for: .milliseconds(120), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                updateStatusItems(with: monitor.snapshot)
+            }
     }
 
-    private func configureStatusButton() {
-        guard let button = statusItem.button else {
+    private func configureMainStatusButton() {
+        guard let button = mainStatusItem.button else {
             return
         }
 
@@ -41,16 +54,45 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         button.action = #selector(togglePopover(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        hostingView.setContentHuggingPriority(.required, for: .horizontal)
-        hostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.addSubview(hostingView)
+        mainHostingView.translatesAutoresizingMaskIntoConstraints = false
+        mainHostingView.setContentHuggingPriority(.required, for: .horizontal)
+        mainHostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        button.addSubview(mainHostingView)
 
         NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
-            hostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
-            hostingView.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+            mainHostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
+            mainHostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
+            mainHostingView.centerYAnchor.constraint(equalTo: button.centerYAnchor)
         ])
+
+        mainHostingView.layoutSubtreeIfNeeded()
+        mainStatusItem.length = max(28, mainHostingView.fittingSize.width + 8)
+    }
+
+    private func createMetricStatusItems() {
+        for kind in StatusBarMetricKind.allCases {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            let hostingView = NSHostingView(rootView: StatusBarMetricContent(kind: kind, snapshot: monitor.snapshot))
+            guard let button = item.button else {
+                continue
+            }
+
+            button.title = ""
+            button.image = nil
+
+            hostingView.translatesAutoresizingMaskIntoConstraints = false
+            hostingView.setContentHuggingPriority(.required, for: .horizontal)
+            hostingView.setContentCompressionResistancePriority(.required, for: .horizontal)
+            button.addSubview(hostingView)
+
+            NSLayoutConstraint.activate([
+                hostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor, constant: 4),
+                hostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor, constant: -4),
+                hostingView.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+            ])
+
+            metricItems[kind] = MetricStatusItem(item: item, hostingView: hostingView)
+        }
     }
 
     private func configurePopover() {
@@ -64,12 +106,24 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         )
     }
 
-    private func updateStatusLabel(with snapshot: MetricSnapshot) {
-        hostingView.rootView = StatusBarLabel(snapshot: snapshot)
-        hostingView.layoutSubtreeIfNeeded()
+    private func updateStatusItems(with snapshot: MetricSnapshot) {
+        for kind in StatusBarMetricKind.allCases {
+            guard let metricItem = metricItems[kind] else {
+                continue
+            }
 
-        let fittingWidth = hostingView.fittingSize.width
-        statusItem.length = max(28, fittingWidth + 8)
+            if kind.isEnabled {
+                metricItem.hostingView.rootView = StatusBarMetricContent(kind: kind, snapshot: snapshot)
+                metricItem.hostingView.layoutSubtreeIfNeeded()
+
+                let fittingWidth = metricItem.hostingView.fittingSize.width
+                metricItem.item.length = max(kind.minimumWidth, fittingWidth + 8)
+                metricItem.item.isVisible = true
+            } else {
+                metricItem.item.length = 0
+                metricItem.item.isVisible = false
+            }
+        }
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -78,7 +132,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        guard let button = statusItem.button else {
+        guard let button = mainStatusItem.button else {
             return
         }
 
@@ -178,7 +232,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func isEventInsideStatusButton(_ event: NSEvent) -> Bool {
         guard
-            let button = statusItem.button,
+            let button = mainStatusItem.button,
             event.window === button.window
         else {
             return false
@@ -202,9 +256,21 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             return
         }
 
-        guard let window = statusItem.button?.window, window.isVisible else {
+        guard let window = mainStatusItem.button?.window, window.isVisible else {
             closePopover(nil)
             return
         }
+    }
+}
+
+private struct MetricStatusItem {
+    let item: NSStatusItem
+    let hostingView: NSHostingView<StatusBarMetricContent>
+}
+
+private struct MainStatusIcon: View {
+    var body: some View {
+        Image(systemName: "circle.hexagongrid.circle")
+            .font(.system(size: 13, weight: .semibold))
     }
 }

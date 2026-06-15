@@ -1,39 +1,72 @@
 import SwiftUI
 
-struct StatusBarLabel: View {
+enum StatusBarMetricKind: CaseIterable {
+    case network
+    case cpu
+    case temp
+    case memory
+    case storage
+
+    var preferenceKey: String {
+        switch self {
+        case .network:
+            StatusBarPreferences.showNetworkTransfer
+        case .cpu:
+            StatusBarPreferences.showCPUUsage
+        case .temp:
+            StatusBarPreferences.showCPUTemperature
+        case .memory:
+            StatusBarPreferences.showMemoryUsage
+        case .storage:
+            StatusBarPreferences.showStorageUsage
+        }
+    }
+
+    var defaultValue: Bool {
+        switch self {
+        case .network, .cpu, .memory, .storage:
+            true
+        case .temp:
+            false
+        }
+    }
+
+    var minimumWidth: CGFloat {
+        switch self {
+        case .network:
+            54
+        case .cpu, .temp, .memory, .storage:
+            30
+        }
+    }
+
+    var isEnabled: Bool {
+        guard let value = UserDefaults.standard.object(forKey: preferenceKey) as? Bool else {
+            return defaultValue
+        }
+        return value
+    }
+}
+
+struct StatusBarMetricContent: View {
+    let kind: StatusBarMetricKind
     let snapshot: MetricSnapshot
 
-    @AppStorage(StatusBarPreferences.showNetworkTransfer) private var showNetworkTransfer = true
-    @AppStorage(StatusBarPreferences.showCPUUsage) private var showCPUUsage = true
-    @AppStorage(StatusBarPreferences.showCPUTemperature) private var showCPUTemperature = false
-    @AppStorage(StatusBarPreferences.showMemoryUsage) private var showMemoryUsage = true
-    @AppStorage(StatusBarPreferences.showStorageUsage) private var showStorageUsage = true
-
     var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            Image(systemName: "circle.hexagongrid.circle")
-                .font(.system(size: 13, weight: .semibold))
-
-            if showNetworkTransfer {
+        Group {
+            switch kind {
+            case .network:
                 NetworkTransferLabel(
                     upload: ByteFormatter.speed(snapshot.uploadBytesPerSecond),
                     download: ByteFormatter.speed(snapshot.downloadBytesPerSecond)
                 )
-            }
-
-            if showCPUUsage {
+            case .cpu:
                 StatusBarMetric(label: "CPU", value: percent(snapshot.cpuPercent))
-            }
-
-            if showCPUTemperature {
+            case .temp:
                 StatusBarMetric(label: "TEMP", value: temperature(snapshot.cpuTemperatureCelsius))
-            }
-
-            if showMemoryUsage {
+            case .memory:
                 StatusBarMetric(label: "MEM", value: percent(snapshot.memoryPercent))
-            }
-
-            if showStorageUsage {
+            case .storage:
                 StatusBarMetric(label: "SSD", value: percent(snapshot.storagePercent))
             }
         }

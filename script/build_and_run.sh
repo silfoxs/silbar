@@ -76,8 +76,13 @@ if [[ "$MODE" == "package" ]]; then
   BUILD_FLAGS=(--configuration release)
 fi
 
-swift build "${BUILD_FLAGS[@]}"
-BUILD_BINARY="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)/$APP_NAME"
+if [[ ${#BUILD_FLAGS[@]} -gt 0 ]]; then
+  swift build "${BUILD_FLAGS[@]}"
+  BUILD_BINARY="$(swift build "${BUILD_FLAGS[@]}" --show-bin-path)/$APP_NAME"
+else
+  swift build
+  BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+fi
 
 rm -rf "$APP_BUNDLE"
 mkdir -p "$APP_MACOS" "$APP_RESOURCES"
