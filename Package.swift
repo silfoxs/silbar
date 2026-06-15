@@ -13,6 +13,9 @@ let package = Package(
         .executableTarget(
             name: "SilBar",
             path: "Sources/SilBar",
+            resources: [
+                .process("Resources")
+            ],
             linkerSettings: [
                 .linkedFramework("IOKit")
             ]
