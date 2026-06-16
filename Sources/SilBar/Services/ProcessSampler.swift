@@ -136,9 +136,11 @@ final class ProcessSampler: @unchecked Sendable {
         }
         let usedCount = min(pids.count, max(0, Int(usedBytes) / MemoryLayout<pid_t>.stride))
 
-        let rows = pids.prefix(usedCount).compactMap { pid -> ProcessMemoryUsage? in
+        var aggregates: [String: MemoryAppAggregate] = [:]
+
+        for pid in pids.prefix(usedCount) {
             guard pid > 0 else {
-                return nil
+                continue
             }
 
             var taskInfo = proc_taskinfo()
@@ -155,16 +157,29 @@ final class ProcessSampler: @unchecked Sendable {
             }
 
             guard result == Int32(MemoryLayout<proc_taskinfo>.size), taskInfo.pti_resident_size > 0 else {
-                return nil
+                continue
             }
 
-            return ProcessMemoryUsage(
-                pid: pid,
-                name: displayName(from: processName(pid: pid)),
-                memoryBytes: UInt64(taskInfo.pti_resident_size)
-            )
+            let memoryBytes = UInt64(taskInfo.pti_resident_size)
+            let name = appDisplayName(pid: pid, fallback: processName(pid: pid))
+            var aggregate = aggregates[name] ?? MemoryAppAggregate(pid: pid, name: name, memoryBytes: 0)
+            aggregate.memoryBytes += memoryBytes
+            if memoryBytes > aggregate.representativeMemoryBytes {
+                aggregate.pid = pid
+                aggregate.representativeMemoryBytes = memoryBytes
+            }
+            aggregates[name] = aggregate
         }
-        .sorted { $0.memoryBytes > $1.memoryBytes }
+
+        let rows = aggregates.values
+            .map {
+                ProcessMemoryUsage(
+                    pid: $0.pid,
+                    name: $0.name,
+                    memoryBytes: $0.memoryBytes
+                )
+            }
+            .sorted { $0.memoryBytes > $1.memoryBytes }
 
         return Array(rows.prefix(limit))
     }
@@ -190,6 +205,40 @@ final class ProcessSampler: @unchecked Sendable {
         }
 
         return String(decoding: buffer.prefix(Int(length)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    private func appDisplayName(pid: pid_t, fallback: String) -> String {
+        if let appName = appBundleName(pid: pid) {
+            return displayName(from: appName)
+        }
+
+        return displayName(from: fallback)
+    }
+
+    private func appBundleName(pid: pid_t) -> String? {
+        guard let path = executablePath(pid: pid) else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: path).pathComponents
+            .first { $0.hasSuffix(".app") }?
+            .replacingOccurrences(of: ".app", with: "")
+    }
+
+    private func executablePath(pid: pid_t) -> String? {
+        var buffer = [CChar](repeating: 0, count: 4096)
+        let length = buffer.withUnsafeMutableBufferPointer { pointer in
+            proc_pidpath(pid, pointer.baseAddress, UInt32(pointer.count))
+        }
+
+        guard length > 0 else {
+            return nil
+        }
+
+        let bytes = buffer.prefix(Int(length))
+            .prefix { $0 != 0 }
+            .map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private func parseNettopLine(_ line: Substring) -> NetworkProcessCounter? {
@@ -274,6 +323,13 @@ private struct CPUProcessCounter {
     let pid: pid_t
     let totalNanoseconds: UInt64
     let timestamp: Date
+}
+
+private struct MemoryAppAggregate {
+    var pid: pid_t
+    let name: String
+    var memoryBytes: UInt64
+    var representativeMemoryBytes: UInt64 = 0
 }
 
 private func processIdentifier(from rawValue: String) -> Int32? {
