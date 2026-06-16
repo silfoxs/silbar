@@ -54,7 +54,7 @@ default_app_version() {
   if version="$(git -C "$ROOT_DIR" describe --tags --match 'silbar-v[0-9]*' --abbrev=0 2>/dev/null)"; then
     echo "${version#silbar-v}"
   else
-    echo "0.20"
+    echo "0.2.0"
   fi
 }
 

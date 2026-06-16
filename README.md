@@ -39,11 +39,11 @@ swift build -c release
 App 版本默认读取 `build.env`：
 
 ```env
-APP_VERSION=0.20
+APP_VERSION=0.2.0
 APP_BUILD_NUMBER=1
 ```
 
-如果不在 `build.env` 中指定 `APP_VERSION`，脚本会从最新的 `silbar-v*` tag 推导版本，例如 `silbar-v0.20` 会生成 app 版本 `0.20`。
+如果不在 `build.env` 中指定 `APP_VERSION`，脚本会从最新的 `silbar-v*` tag 推导版本，例如 `silbar-v0.2.0` 会生成 app 版本 `0.2.0`。
 
 也可以在构建时临时覆盖：
 
