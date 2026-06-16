@@ -2,24 +2,17 @@ import AppKit
 import SwiftUI
 
 struct DashboardView: View {
-    @ObservedObject var monitor: SystemMonitor
+    let monitor: SystemMonitor
     @State private var page: DashboardPage = .metrics
 
     var body: some View {
         GlassEffectContainer(spacing: 14) {
             VStack(spacing: 14) {
                 panelToolbar
-
-                switch page {
-                case .metrics:
-                    metricsPage
-                case .settings:
-                    SettingsView()
-                }
+                pageContent
             }
             .padding(14)
         }
-        .animation(.snappy(duration: 0.18), value: page)
         .background(MenuBarWindowBackgroundCleaner())
     }
 
@@ -37,7 +30,9 @@ struct DashboardView: View {
             Spacer()
 
             Button {
-                page = page == .settings ? .metrics : .settings
+                withAnimation(Self.pageAnimation) {
+                    page = page == .settings ? .metrics : .settings
+                }
             } label: {
                 Image(systemName: page == .settings ? "chevron.left" : "gearshape")
                     .font(.system(size: 13, weight: .semibold))
@@ -47,14 +42,40 @@ struct DashboardView: View {
         }
     }
 
-    private var metricsPage: some View {
+    @ViewBuilder
+    private var pageContent: some View {
+        switch page {
+        case .metrics:
+            MetricsPage(monitor: monitor)
+                .transition(Self.pageTransition)
+        case .settings:
+            SettingsView()
+                .transition(Self.pageTransition)
+        }
+    }
+
+    private static let pageAnimation = Animation.easeOut(duration: 0.14)
+    private static let pageTransition = AnyTransition.opacity.combined(
+        with: .offset(x: 0, y: 6)
+    )
+}
+
+private enum DashboardPage {
+    case metrics
+    case settings
+}
+
+private struct MetricsPage: View {
+    @ObservedObject var monitor: SystemMonitor
+
+    var body: some View {
         VStack(spacing: 14) {
             metricStrip
             NetworkChartCard(snapshot: monitor.snapshot)
             ProcessListCard(
                 title: "网络占用",
                 systemImage: "arrow.up.arrow.down",
-                rows: monitor.snapshot.topNetworkApps.map {
+                rows: monitor.snapshot.topNetworkApps.prefix(5).map {
                     ProcessRow(
                         pid: $0.pid,
                         name: $0.name,
@@ -75,7 +96,7 @@ struct DashboardView: View {
             ProcessListCard(
                 title: "内存占用",
                 systemImage: "memorychip",
-                rows: monitor.snapshot.topMemoryApps.map {
+                rows: monitor.snapshot.topMemoryApps.prefix(5).map {
                     ProcessRow(
                         pid: $0.pid,
                         name: $0.name,
@@ -83,6 +104,9 @@ struct DashboardView: View {
                     )
                 }
             )
+        }
+        .transaction { transaction in
+            transaction.animation = nil
         }
     }
 
@@ -122,11 +146,6 @@ struct DashboardView: View {
             )
         }
     }
-}
-
-private enum DashboardPage {
-    case metrics
-    case settings
 }
 
 private struct SettingsView: View {
