@@ -10,6 +10,8 @@ struct MetricSnapshot {
     var networkHistory: [NetworkSample] = []
     var topNetworkApps: [ProcessNetworkUsage] = []
     var topMemoryApps: [ProcessMemoryUsage] = []
+    var topCPUApps: [ProcessCPUUsage] = []
+    var coreUsages: [Double] = []
     var updatedAt: Date = .now
 }
 
@@ -37,4 +39,11 @@ struct ProcessMemoryUsage: Identifiable {
     let pid: Int32?
     let name: String
     let memoryBytes: UInt64
+}
+
+struct ProcessCPUUsage: Identifiable {
+    let id = UUID()
+    let pid: Int32?
+    let name: String
+    let cpuPercent: Double
 }

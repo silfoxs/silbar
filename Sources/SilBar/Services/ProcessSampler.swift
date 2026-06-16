@@ -3,6 +3,69 @@ import Foundation
 
 final class ProcessSampler: @unchecked Sendable {
     private var previousNetworkCounters: [String: NetworkProcessCounter] = [:]
+    private var previousCPUCounters: [pid_t: CPUProcessCounter] = [:]
+
+    func topCPUApps(limit: Int = 10) -> [ProcessCPUUsage] {
+        let byteCount = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        guard byteCount > 0 else {
+            return []
+        }
+
+        let pidCapacity = Int(byteCount) / MemoryLayout<pid_t>.stride
+        var pids = [pid_t](repeating: 0, count: pidCapacity)
+        let usedBytes = pids.withUnsafeMutableBytes { buffer in
+            proc_listpids(UInt32(PROC_ALL_PIDS), 0, buffer.baseAddress, Int32(buffer.count))
+        }
+        let usedCount = min(pids.count, max(0, Int(usedBytes) / MemoryLayout<pid_t>.stride))
+        let now = Date()
+
+        var currentCounters: [pid_t: CPUProcessCounter] = [:]
+        var results: [ProcessCPUUsage] = []
+
+        for pid in pids.prefix(usedCount) {
+            guard pid > 0 else { continue }
+
+            var taskInfo = proc_taskinfo()
+            let result = withUnsafeMutablePointer(to: &taskInfo) { pointer in
+                pointer.withMemoryRebound(to: UInt8.self, capacity: MemoryLayout<proc_taskinfo>.size) { reboundPointer in
+                    proc_pidinfo(
+                        pid,
+                        Int32(PROC_PIDTASKINFO),
+                        0,
+                        reboundPointer,
+                        Int32(MemoryLayout<proc_taskinfo>.size)
+                    )
+                }
+            }
+
+            guard result == Int32(MemoryLayout<proc_taskinfo>.size) else { continue }
+
+            let totalTime = taskInfo.pti_total_user + taskInfo.pti_total_system
+            currentCounters[pid] = CPUProcessCounter(
+                pid: pid,
+                totalNanoseconds: totalTime,
+                timestamp: now
+            )
+
+            if let previous = previousCPUCounters[pid] {
+                let interval = max(now.timeIntervalSince(previous.timestamp), 0.1)
+                let delta = totalTime >= previous.totalNanoseconds ? totalTime - previous.totalNanoseconds : 0
+                let percent = Double(delta) / (interval * 1_000_000_000) * 100
+
+                if percent > 0.1 {
+                    results.append(ProcessCPUUsage(
+                        pid: pid,
+                        name: processName(pid: pid),
+                        cpuPercent: percent
+                    ))
+                }
+            }
+        }
+
+        previousCPUCounters = currentCounters
+
+        return Array(results.sorted { $0.cpuPercent > $1.cpuPercent }.prefix(limit))
+    }
 
     func topNetworkApps(limit: Int = 10) -> [ProcessNetworkUsage] {
         let output = run("/usr/bin/nettop", arguments: ["-P", "-L", "1", "-x", "-n"])
@@ -51,7 +114,7 @@ final class ProcessSampler: @unchecked Sendable {
         return Array(rows.prefix(limit))
     }
 
-    func topMemoryApps(limit: Int = 5) -> [ProcessMemoryUsage] {
+    func topMemoryApps(limit: Int = 10) -> [ProcessMemoryUsage] {
         let nativeRows = topMemoryAppsFromLibproc(limit: limit)
         if !nativeRows.isEmpty {
             return nativeRows
@@ -204,6 +267,12 @@ private struct NetworkProcessCounter {
     let name: String
     let downloadBytes: UInt64
     let uploadBytes: UInt64
+    let timestamp: Date
+}
+
+private struct CPUProcessCounter {
+    let pid: pid_t
+    let totalNanoseconds: UInt64
     let timestamp: Date
 }
 

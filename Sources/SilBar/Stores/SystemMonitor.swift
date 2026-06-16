@@ -50,12 +50,13 @@ final class SystemMonitor: ObservableObject {
 
         refreshTask = Task.detached(priority: .utility) {
             let networkSpeed = networkSampler.sampleSpeed()
-            let cpuPercent = statsProvider.cpuPercent()
+            let cpuUsage = statsProvider.cpuUsage()
             let cpuTemperatureCelsius = temperatureSampler.sampleCelsius()
             let memoryPercent = statsProvider.memoryPercent()
             let storagePercent = statsProvider.storagePercent()
             let topMemoryApps = processSampler.topMemoryApps()
             let topNetworkApps = processSampler.topNetworkApps()
+            let topCPUApps = processSampler.topCPUApps()
             let sample = NetworkSample(
                 timestamp: .now,
                 uploadBytesPerSecond: networkSpeed.upload,
@@ -70,7 +71,7 @@ final class SystemMonitor: ObservableObject {
                 }
 
                 self.snapshot = MetricSnapshot(
-                    cpuPercent: cpuPercent,
+                    cpuPercent: cpuUsage.overall,
                     cpuTemperatureCelsius: cpuTemperatureCelsius,
                     memoryPercent: memoryPercent,
                     storagePercent: storagePercent,
@@ -79,6 +80,8 @@ final class SystemMonitor: ObservableObject {
                     networkHistory: history,
                     topNetworkApps: topNetworkApps,
                     topMemoryApps: topMemoryApps,
+                    topCPUApps: topCPUApps,
+                    coreUsages: cpuUsage.cores,
                     updatedAt: .now
                 )
                 self.refreshTask = nil

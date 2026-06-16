@@ -4,14 +4,19 @@ import Foundation
 final class SystemStatsProvider: @unchecked Sendable {
     private var previousCPUInfo: [CPUInfo]?
 
-    func cpuPercent() -> Double {
+    struct CPUUsage {
+        let overall: Double
+        let cores: [Double]
+    }
+
+    func cpuUsage() -> CPUUsage {
         let current = readCPUInfo()
         defer {
             previousCPUInfo = current
         }
 
         guard let previousCPUInfo, previousCPUInfo.count == current.count else {
-            return 0
+            return CPUUsage(overall: 0, cores: [])
         }
 
         let usages = zip(previousCPUInfo, current).compactMap { previous, current -> Double? in
@@ -28,11 +33,8 @@ final class SystemStatsProvider: @unchecked Sendable {
             return Double(user + system + nice) / Double(total) * 100
         }
 
-        guard !usages.isEmpty else {
-            return 0
-        }
-
-        return usages.reduce(0, +) / Double(usages.count)
+        let overall = usages.isEmpty ? 0 : usages.reduce(0, +) / Double(usages.count)
+        return CPUUsage(overall: overall, cores: usages)
     }
 
     func memoryPercent() -> Double {

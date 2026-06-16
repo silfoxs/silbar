@@ -8,6 +8,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private let mainStatusItem: NSStatusItem
     private let popover = NSPopover()
     private let networkPopover = NSPopover()
+    private let cpuPopover = NSPopover()
+    private let tempPopover = NSPopover()
     private let mainHostingView: NSHostingView<MainStatusIcon>
     private var metricItems: [StatusBarMetricKind: MetricStatusItem] = [:]
     private var visibleMetricKinds: [StatusBarMetricKind] = []
@@ -17,6 +19,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var globalEventMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
     private var statusVisibilityTimer: Timer?
+    private var activePopoverID: ObjectIdentifier?
 
     init(monitor: SystemMonitor) {
         self.monitor = monitor
@@ -29,6 +32,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         rebuildMetricStatusItems()
         configurePopover()
         configureNetworkPopover()
+        configureCPUPopover(cpuPopover)
+        configureCPUPopover(tempPopover)
         updateStatusItems(with: monitor.snapshot)
 
         snapshotCancellable = monitor.$snapshot.sink { [weak self] snapshot in
@@ -94,6 +99,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 button.target = self
                 button.action = #selector(toggleNetworkPopover(_:))
                 button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            } else if kind == .cpu || kind == .temp {
+                button.target = self
+                button.action = #selector(toggleCPUPopover(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
 
             hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -128,6 +137,17 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         networkPopover.contentSize = NSSize(width: 430, height: 620)
         networkPopover.contentViewController = NSHostingController(
             rootView: NetworkPopoverView(monitor: monitor)
+                .frame(width: 430)
+                .containerBackground(.clear, for: .window)
+        )
+    }
+
+    private func configureCPUPopover(_ popover: NSPopover) {
+        popover.behavior = .transient
+        popover.delegate = self
+        popover.contentSize = NSSize(width: 430, height: 620)
+        popover.contentViewController = NSHostingController(
+            rootView: CPUPopoverView(monitor: monitor)
                 .frame(width: 430)
                 .containerBackground(.clear, for: .window)
         )
@@ -182,43 +202,141 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         showNetworkPopover(relativeTo: networkItem)
     }
 
+    @objc private func toggleCPUPopover(_ sender: Any?) {
+        guard
+            let button = sender as? NSStatusBarButton,
+            let targetPopover = cpuPopover(for: button)
+        else {
+            return
+        }
+
+        if targetPopover.isShown {
+            closeCPUPopover(targetPopover, sender)
+            return
+        }
+
+        closeOtherCPUPopovers(except: targetPopover)
+        showCPUPopover(targetPopover, relativeTo: button)
+    }
+
     private func showPopover(relativeTo button: NSStatusBarButton) {
+        activePopoverID = ObjectIdentifier(popover)
+        closeOtherPopovers(except: popover)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.isOpaque = false
-        popover.contentViewController?.view.window?.backgroundColor = .clear
+        configureTransparentWindow(for: popover)
         startPopoverCloseObservers()
     }
 
     private func closePopover(_ sender: Any?) {
         guard popover.isShown else {
-            stopPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(popover)
             return
         }
 
         popover.performClose(sender)
-        stopPopoverCloseObservers()
+        stopPopoverCloseObserversIfActive(popover)
     }
 
     private func showNetworkPopover(relativeTo button: NSStatusBarButton) {
+        activePopoverID = ObjectIdentifier(networkPopover)
+        closeOtherPopovers(except: networkPopover)
         networkPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        networkPopover.contentViewController?.view.window?.isOpaque = false
-        networkPopover.contentViewController?.view.window?.backgroundColor = .clear
+        configureTransparentWindow(for: networkPopover)
         startNetworkPopoverCloseObservers()
     }
 
     private func closeNetworkPopover(_ sender: Any?) {
         guard networkPopover.isShown else {
-            stopNetworkPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(networkPopover)
             return
         }
 
         networkPopover.performClose(sender)
-        stopNetworkPopoverCloseObservers()
+        stopPopoverCloseObserversIfActive(networkPopover)
+    }
+
+    private func showCPUPopover(_ popover: NSPopover, relativeTo button: NSStatusBarButton) {
+        activePopoverID = ObjectIdentifier(popover)
+        closeOtherPopovers(except: popover)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        configureTransparentWindow(for: popover)
+        startCPUPopoverCloseObservers()
+    }
+
+    private func configureTransparentWindow(for popover: NSPopover) {
+        popover.contentViewController?.view.window?.isOpaque = false
+        popover.contentViewController?.view.window?.backgroundColor = .clear
+    }
+
+    private func closeCPUPopover(_ popover: NSPopover, _ sender: Any?) {
+        guard popover.isShown else {
+            stopPopoverCloseObserversIfActive(popover)
+            return
+        }
+
+        popover.performClose(sender)
+        stopPopoverCloseObserversIfActive(popover)
+    }
+
+    private func closeShownCPUPopovers(_ sender: Any?) {
+        closeOtherCPUPopovers(except: nil, sender)
+        if activePopoverID == ObjectIdentifier(cpuPopover) || activePopoverID == ObjectIdentifier(tempPopover) {
+            stopCPUPopoverCloseObservers()
+            activePopoverID = nil
+        }
+    }
+
+    private func closeOtherPopovers(except activePopover: NSPopover?, _ sender: Any? = nil) {
+        for popover in [popover, networkPopover, cpuPopover, tempPopover] where popover !== activePopover && popover.isShown {
+            popover.performClose(sender)
+        }
+    }
+
+    private func closeOtherCPUPopovers(except activePopover: NSPopover?, _ sender: Any? = nil) {
+        for popover in [cpuPopover, tempPopover] where popover !== activePopover && popover.isShown {
+            popover.performClose(sender)
+        }
+    }
+
+    private func cpuPopover(for button: NSStatusBarButton) -> NSPopover? {
+        if button === metricItems[.cpu]?.item.button {
+            return cpuPopover
+        }
+        if button === metricItems[.temp]?.item.button {
+            return tempPopover
+        }
+        return nil
     }
 
     nonisolated func popoverDidClose(_ notification: Notification) {
+        let closedPopoverID = (notification.object as AnyObject?).map(ObjectIdentifier.init)
+
         Task { @MainActor in
-            self.stopPopoverCloseObservers()
+            guard let closedPopoverID else {
+                self.stopPopoverCloseObservers()
+                self.stopNetworkPopoverCloseObservers()
+                self.stopCPUPopoverCloseObservers()
+                self.activePopoverID = nil
+                return
+            }
+
+            guard closedPopoverID == self.activePopoverID else {
+                return
+            }
+
+            if closedPopoverID == ObjectIdentifier(self.popover) {
+                self.stopPopoverCloseObservers()
+            } else if closedPopoverID == ObjectIdentifier(self.networkPopover) {
+                self.stopNetworkPopoverCloseObservers()
+            } else if closedPopoverID == ObjectIdentifier(self.cpuPopover) || closedPopoverID == ObjectIdentifier(self.tempPopover) {
+                if !self.isCPUPopoverShown {
+                    self.stopCPUPopoverCloseObservers()
+                }
+            }
+
+            if !self.isAnyPopoverShown {
+                self.activePopoverID = nil
+            }
         }
     }
 
@@ -332,9 +450,80 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         statusVisibilityTimer = nil
     }
 
+    private func startCPUPopoverCloseObservers() {
+        stopCPUPopoverCloseObservers()
+
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.closeCPUPopoverIfNeeded(for: event)
+            }
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeShownCPUPopovers(nil)
+            }
+        }
+
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeShownCPUPopovers(nil)
+            }
+        }
+
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeCPUPopoverIfStatusItemHidden()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusVisibilityTimer = timer
+    }
+
+    private func stopCPUPopoverCloseObservers() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+
+        if let resignActiveObserver {
+            NotificationCenter.default.removeObserver(resignActiveObserver)
+            self.resignActiveObserver = nil
+        }
+
+        statusVisibilityTimer?.invalidate()
+        statusVisibilityTimer = nil
+    }
+
+    private func stopPopoverCloseObserversIfActive(_ popover: NSPopover) {
+        guard activePopoverID == ObjectIdentifier(popover) else {
+            return
+        }
+
+        if popover === self.popover {
+            stopPopoverCloseObservers()
+        } else if popover === networkPopover {
+            stopNetworkPopoverCloseObservers()
+        } else if popover === cpuPopover || popover === tempPopover {
+            stopCPUPopoverCloseObservers()
+        }
+
+        activePopoverID = nil
+    }
+
     private func closePopoverIfNeeded(for event: NSEvent) {
         guard popover.isShown else {
-            stopPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(popover)
             return
         }
 
@@ -367,7 +556,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func closePopoverIfStatusItemHidden() {
         guard popover.isShown else {
-            stopPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(popover)
             return
         }
 
@@ -379,7 +568,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func closeNetworkPopoverIfNeeded(for event: NSEvent) {
         guard networkPopover.isShown else {
-            stopNetworkPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(networkPopover)
             return
         }
 
@@ -412,7 +601,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     private func closeNetworkPopoverIfStatusItemHidden() {
         guard networkPopover.isShown else {
-            stopNetworkPopoverCloseObservers()
+            stopPopoverCloseObserversIfActive(networkPopover)
             return
         }
 
@@ -420,6 +609,68 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             closeNetworkPopover(nil)
             return
         }
+    }
+
+    private func closeCPUPopoverIfNeeded(for event: NSEvent) {
+        guard isCPUPopoverShown else {
+            if activePopoverID == ObjectIdentifier(cpuPopover) || activePopoverID == ObjectIdentifier(tempPopover) {
+                stopCPUPopoverCloseObservers()
+                activePopoverID = nil
+            }
+            return
+        }
+
+        if isEventInsideCPUStatusButton(event) || isEventInsideCPUPopover(event) {
+            return
+        }
+
+        closeShownCPUPopovers(nil)
+    }
+
+    private func isEventInsideCPUStatusButton(_ event: NSEvent) -> Bool {
+        [metricItems[.cpu]?.item.button, metricItems[.temp]?.item.button].contains { button in
+            guard let button, event.window === button.window else {
+                return false
+            }
+
+            let point = button.convert(event.locationInWindow, from: nil)
+            return button.bounds.contains(point)
+        }
+    }
+
+    private func isEventInsideCPUPopover(_ event: NSEvent) -> Bool {
+        [cpuPopover, tempPopover].contains { popover in
+            guard let window = popover.contentViewController?.view.window else {
+                return false
+            }
+
+            return event.window === window
+        }
+    }
+
+    private func closeCPUPopoverIfStatusItemHidden() {
+        guard isCPUPopoverShown else {
+            if activePopoverID == ObjectIdentifier(cpuPopover) || activePopoverID == ObjectIdentifier(tempPopover) {
+                stopCPUPopoverCloseObservers()
+                activePopoverID = nil
+            }
+            return
+        }
+
+        let cpuButton = metricItems[.cpu]?.item.button
+        let tempButton = metricItems[.temp]?.item.button
+        guard let button = cpuButton ?? tempButton, let window = button.window, window.isVisible else {
+            closeShownCPUPopovers(nil)
+            return
+        }
+    }
+
+    private var isCPUPopoverShown: Bool {
+        cpuPopover.isShown || tempPopover.isShown
+    }
+
+    private var isAnyPopoverShown: Bool {
+        popover.isShown || networkPopover.isShown || isCPUPopoverShown
     }
 }
 
