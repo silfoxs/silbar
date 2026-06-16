@@ -28,6 +28,19 @@ jobs:
           xcodebuild -version
           swift --version
 
+      - name: Resolve build environment overrides
+        env:
+          APP_VERSION_OVERRIDE: ${{ vars.APP_VERSION }}
+          APP_BUILD_NUMBER_OVERRIDE: ${{ vars.APP_BUILD_NUMBER }}
+        run: |
+          if [[ -n "${APP_VERSION_OVERRIDE:-}" ]]; then
+            echo "APP_VERSION=$APP_VERSION_OVERRIDE" >> "$GITHUB_ENV"
+          fi
+
+          if [[ -n "${APP_BUILD_NUMBER_OVERRIDE:-}" ]]; then
+            echo "APP_BUILD_NUMBER=$APP_BUILD_NUMBER_OVERRIDE" >> "$GITHUB_ENV"
+          fi
+
       - name: Build installer
         id: build-installer
         run: |
@@ -44,14 +57,7 @@ jobs:
           echo "app_name=$APP_NAME" >> "$GITHUB_OUTPUT"
           echo "app_version=$APP_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ steps.build-installer.outputs.package_name }}
-          path: ${{ steps.build-installer.outputs.package_path }}
-          if-no-files-found: error
-
-      - name: Publish GitHub release
+      - name: Create or update draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: Silbar-v${{ steps.build-installer.outputs.app_version }}
@@ -61,15 +67,25 @@ jobs:
         run: |
           set -euo pipefail
 
+          RELEASE_EXISTS=0
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            RELEASE_EXISTS=1
+            IS_DRAFT="$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')"
+            if [[ "$IS_DRAFT" != "true" ]]; then
+              echo "Release $TAG_NAME is already published. Bump APP_VERSION before creating a new draft." >&2
+              exit 1
+            fi
+          fi
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -f "$TAG_NAME" "$GITHUB_SHA"
           git push origin "refs/tags/$TAG_NAME" --force
 
           SHORT_SHA="${GITHUB_SHA::7}"
-          NOTES="Automated build from main commit ${SHORT_SHA}: ${PACKAGE_NAME}."
+          NOTES="Draft build from main commit ${SHORT_SHA}: ${PACKAGE_NAME}."
 
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+          if [[ "$RELEASE_EXISTS" -eq 1 ]]; then
             gh release edit "$TAG_NAME" --title "$RELEASE_TITLE" --notes "$NOTES"
             while IFS= read -r asset_name; do
               case "$asset_name" in
@@ -83,5 +99,5 @@ jobs:
             gh release create "$TAG_NAME" "$PACKAGE_PATH" \
               --title "$RELEASE_TITLE" \
               --notes "$NOTES" \
-              --latest
+              --draft
           fi
