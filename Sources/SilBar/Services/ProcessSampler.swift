@@ -4,7 +4,7 @@ import Foundation
 final class ProcessSampler: @unchecked Sendable {
     private var previousNetworkCounters: [String: NetworkProcessCounter] = [:]
 
-    func topNetworkApps(limit: Int = 5) -> [ProcessNetworkUsage] {
+    func topNetworkApps(limit: Int = 10) -> [ProcessNetworkUsage] {
         let output = run("/usr/bin/nettop", arguments: ["-P", "-L", "1", "-x", "-n"])
         let now = Date()
         let counters = Dictionary(
