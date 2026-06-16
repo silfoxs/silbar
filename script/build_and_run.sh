@@ -7,6 +7,7 @@ BUNDLE_ID="com.openai.silbar"
 MIN_SYSTEM_VERSION="26.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BUILD_ENV_FILE="$ROOT_DIR/build.env"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -23,6 +24,29 @@ INSTALLER_BACKGROUND_IMAGE="installer-background.png"
 
 usage() {
   echo "usage: $0 [run|--debug|--logs|--telemetry|--verify|package]" >&2
+}
+
+load_build_env() {
+  local app_version_was_set=0
+  local app_build_number_was_set=0
+  local app_version_override="${APP_VERSION-}"
+  local app_build_number_override="${APP_BUILD_NUMBER-}"
+
+  [[ ${APP_VERSION+x} ]] && app_version_was_set=1
+  [[ ${APP_BUILD_NUMBER+x} ]] && app_build_number_was_set=1
+
+  if [[ -f "$BUILD_ENV_FILE" ]]; then
+    set -a
+    source "$BUILD_ENV_FILE"
+    set +a
+  fi
+
+  if [[ "$app_version_was_set" -eq 1 ]]; then
+    APP_VERSION="$app_version_override"
+  fi
+  if [[ "$app_build_number_was_set" -eq 1 ]]; then
+    APP_BUILD_NUMBER="$app_build_number_override"
+  fi
 }
 
 default_app_version() {
@@ -70,6 +94,8 @@ case "$MODE" in
     exit 2
     ;;
 esac
+
+load_build_env
 
 APP_VERSION="${APP_VERSION:-$(default_app_version)}"
 APP_BUILD_NUMBER="${APP_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"

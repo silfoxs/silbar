@@ -30,6 +30,25 @@ swift build -c release
 
 构建产物位于 `.build/release/SilBar`
 
+### 构建 App Bundle
+
+```bash
+./script/build_and_run.sh package
+```
+
+App 版本默认读取 `build.env`：
+
+```env
+APP_VERSION=0.2.0
+APP_BUILD_NUMBER=1
+```
+
+也可以在构建时临时覆盖：
+
+```bash
+APP_VERSION=1.2.3 APP_BUILD_NUMBER=42 ./script/build_and_run.sh package
+```
+
 ## 使用
 
 运行 SilBar 后，它会出现在菜单栏中。点击图标即可查看系统状态面板。
