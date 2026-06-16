@@ -114,7 +114,7 @@ final class ProcessSampler: @unchecked Sendable {
         return Array(rows.prefix(limit))
     }
 
-    func topMemoryApps(limit: Int = 10) -> [ProcessMemoryUsage] {
+    func topMemoryApps(limit: Int = 15) -> [ProcessMemoryUsage] {
         let nativeRows = topMemoryAppsFromLibproc(limit: limit)
         if !nativeRows.isEmpty {
             return nativeRows

@@ -10,6 +10,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private let networkPopover = NSPopover()
     private let cpuPopover = NSPopover()
     private let tempPopover = NSPopover()
+    private let memoryPopover = NSPopover()
     private let mainHostingView: NSHostingView<MainStatusIcon>
     private var metricItems: [StatusBarMetricKind: MetricStatusItem] = [:]
     private var visibleMetricKinds: [StatusBarMetricKind] = []
@@ -34,6 +35,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         configureNetworkPopover()
         configureCPUPopover(cpuPopover)
         configureCPUPopover(tempPopover)
+        configureMemoryPopover()
         updateStatusItems(with: monitor.snapshot)
 
         snapshotCancellable = monitor.$snapshot.sink { [weak self] snapshot in
@@ -103,6 +105,10 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 button.target = self
                 button.action = #selector(toggleCPUPopover(_:))
                 button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            } else if kind == .memory {
+                button.target = self
+                button.action = #selector(toggleMemoryPopover(_:))
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             }
 
             hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -148,6 +154,17 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         popover.contentSize = NSSize(width: 430, height: 620)
         popover.contentViewController = NSHostingController(
             rootView: CPUPopoverView(monitor: monitor)
+                .frame(width: 430)
+                .containerBackground(.clear, for: .window)
+        )
+    }
+
+    private func configureMemoryPopover() {
+        memoryPopover.behavior = .transient
+        memoryPopover.delegate = self
+        memoryPopover.contentSize = NSSize(width: 430, height: 620)
+        memoryPopover.contentViewController = NSHostingController(
+            rootView: MemoryPopoverView(monitor: monitor)
                 .frame(width: 430)
                 .containerBackground(.clear, for: .window)
         )
@@ -219,6 +236,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         showCPUPopover(targetPopover, relativeTo: button)
     }
 
+    @objc private func toggleMemoryPopover(_ sender: Any?) {
+        if memoryPopover.isShown {
+            closeMemoryPopover(sender)
+            return
+        }
+
+        guard let memoryItem = metricItems[.memory]?.item.button else {
+            return
+        }
+
+        showMemoryPopover(relativeTo: memoryItem)
+    }
+
     private func showPopover(relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
@@ -255,6 +285,24 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         stopPopoverCloseObserversIfActive(networkPopover)
     }
 
+    private func showMemoryPopover(relativeTo button: NSStatusBarButton) {
+        activePopoverID = ObjectIdentifier(memoryPopover)
+        closeOtherPopovers(except: memoryPopover)
+        memoryPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        configureTransparentWindow(for: memoryPopover)
+        startMemoryPopoverCloseObservers()
+    }
+
+    private func closeMemoryPopover(_ sender: Any?) {
+        guard memoryPopover.isShown else {
+            stopPopoverCloseObserversIfActive(memoryPopover)
+            return
+        }
+
+        memoryPopover.performClose(sender)
+        stopPopoverCloseObserversIfActive(memoryPopover)
+    }
+
     private func showCPUPopover(_ popover: NSPopover, relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
@@ -287,7 +335,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func closeOtherPopovers(except activePopover: NSPopover?, _ sender: Any? = nil) {
-        for popover in [popover, networkPopover, cpuPopover, tempPopover] where popover !== activePopover && popover.isShown {
+        for popover in [popover, networkPopover, cpuPopover, tempPopover, memoryPopover] where popover !== activePopover && popover.isShown {
             popover.performClose(sender)
         }
     }
@@ -332,6 +380,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 if !self.isCPUPopoverShown {
                     self.stopCPUPopoverCloseObservers()
                 }
+            } else if closedPopoverID == ObjectIdentifier(self.memoryPopover) {
+                self.stopMemoryPopoverCloseObservers()
             }
 
             if !self.isAnyPopoverShown {
@@ -505,6 +555,61 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         statusVisibilityTimer = nil
     }
 
+    private func startMemoryPopoverCloseObservers() {
+        stopMemoryPopoverCloseObservers()
+
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.closeMemoryPopoverIfNeeded(for: event)
+            }
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeMemoryPopover(nil)
+            }
+        }
+
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeMemoryPopover(nil)
+            }
+        }
+
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeMemoryPopoverIfStatusItemHidden()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusVisibilityTimer = timer
+    }
+
+    private func stopMemoryPopoverCloseObservers() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+
+        if let resignActiveObserver {
+            NotificationCenter.default.removeObserver(resignActiveObserver)
+            self.resignActiveObserver = nil
+        }
+
+        statusVisibilityTimer?.invalidate()
+        statusVisibilityTimer = nil
+    }
+
     private func stopPopoverCloseObserversIfActive(_ popover: NSPopover) {
         guard activePopoverID == ObjectIdentifier(popover) else {
             return
@@ -516,6 +621,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             stopNetworkPopoverCloseObservers()
         } else if popover === cpuPopover || popover === tempPopover {
             stopCPUPopoverCloseObservers()
+        } else if popover === memoryPopover {
+            stopMemoryPopoverCloseObservers()
         }
 
         activePopoverID = nil
@@ -669,8 +776,53 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         cpuPopover.isShown || tempPopover.isShown
     }
 
+    private func closeMemoryPopoverIfNeeded(for event: NSEvent) {
+        guard memoryPopover.isShown else {
+            stopPopoverCloseObserversIfActive(memoryPopover)
+            return
+        }
+
+        if isEventInsideMemoryStatusButton(event) || isEventInsideMemoryPopover(event) {
+            return
+        }
+
+        closeMemoryPopover(nil)
+    }
+
+    private func isEventInsideMemoryStatusButton(_ event: NSEvent) -> Bool {
+        guard
+            let button = metricItems[.memory]?.item.button,
+            event.window === button.window
+        else {
+            return false
+        }
+
+        let point = button.convert(event.locationInWindow, from: nil)
+        return button.bounds.contains(point)
+    }
+
+    private func isEventInsideMemoryPopover(_ event: NSEvent) -> Bool {
+        guard let window = memoryPopover.contentViewController?.view.window else {
+            return false
+        }
+
+        return event.window === window
+    }
+
+    private func closeMemoryPopoverIfStatusItemHidden() {
+        guard memoryPopover.isShown else {
+            stopPopoverCloseObserversIfActive(memoryPopover)
+            return
+        }
+
+        guard let window = metricItems[.memory]?.item.button?.window, window.isVisible else {
+            closeMemoryPopover(nil)
+            return
+        }
+    }
+
     private var isAnyPopoverShown: Bool {
-        popover.isShown || networkPopover.isShown || isCPUPopoverShown
+        popover.isShown || networkPopover.isShown || isCPUPopoverShown || memoryPopover.isShown
     }
 }
 
