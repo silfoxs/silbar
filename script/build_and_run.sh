@@ -51,7 +51,8 @@ load_build_env() {
 
 default_app_version() {
   local version
-  if version="$(git -C "$ROOT_DIR" describe --tags --match 'SilBar-v[0-9]*' --abbrev=0 2>/dev/null)"; then
+  if version="$(git -C "$ROOT_DIR" describe --tags --match 'Silbar-v[0-9]*' --match 'SilBar-v[0-9]*' --abbrev=0 2>/dev/null)"; then
+    version="${version#Silbar-v}"
     echo "${version#SilBar-v}"
   fi
 }
@@ -97,7 +98,7 @@ load_build_env
 
 APP_VERSION="${APP_VERSION:-$(default_app_version)}"
 if [[ -z "$APP_VERSION" ]]; then
-  echo "错误: 未设置 APP_VERSION。请在 build.env 中设置 APP_VERSION 或创建 SilBar-v* 格式的 tag。" >&2
+  echo "错误: 未设置 APP_VERSION。请在 build.env 中设置 APP_VERSION 或创建 Silbar-v* 格式的 tag。" >&2
   exit 1
 fi
 APP_BUILD_NUMBER="${APP_BUILD_NUMBER:-${GITHUB_RUN_NUMBER:-1}}"

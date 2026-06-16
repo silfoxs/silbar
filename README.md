@@ -43,7 +43,7 @@ APP_VERSION=0.2.0
 APP_BUILD_NUMBER=1
 ```
 
-如果不在 `build.env` 中指定 `APP_VERSION`，脚本会从最新的 `SilBar-v*` tag 推导版本，例如 `SilBar-v0.2.0` 会生成 app 版本 `0.2.0`。如果两者都未设置，构建将退出并提示错误。
+如果不在 `build.env` 中指定 `APP_VERSION`，脚本会从最新的 `Silbar-v*` tag 推导版本，例如 `Silbar-v0.2.0` 会生成 app 版本 `0.2.0`。如果两者都未设置，构建将退出并提示错误。
 
 也可以在构建时临时覆盖：
 

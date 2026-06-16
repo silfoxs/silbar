@@ -51,11 +51,11 @@ jobs:
           path: ${{ steps.build-installer.outputs.package_path }}
           if-no-files-found: error
 
-      - name: Publish rolling GitHub release
+      - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: main-latest
-          RELEASE_TITLE: ${{ steps.build-installer.outputs.app_name }} ${{ steps.build-installer.outputs.app_version }}
+          TAG_NAME: Silbar-v${{ steps.build-installer.outputs.app_version }}
+          RELEASE_TITLE: Silbar-v${{ steps.build-installer.outputs.app_version }}
           PACKAGE_PATH: ${{ steps.build-installer.outputs.package_path }}
           PACKAGE_NAME: ${{ steps.build-installer.outputs.package_name }}
         run: |
