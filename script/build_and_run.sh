@@ -51,10 +51,10 @@ load_build_env() {
 
 default_app_version() {
   local version
-  if version="$(git -C "$ROOT_DIR" describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null)"; then
-    echo "${version#v}"
+  if version="$(git -C "$ROOT_DIR" describe --tags --match 'silbar-v[0-9]*' --abbrev=0 2>/dev/null)"; then
+    echo "${version#silbar-v}"
   else
-    echo "0.1.0"
+    echo "0.20"
   fi
 }
 

@@ -29,6 +29,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         super.init()
 
+        mainStatusItem.autosaveName = "SilBar.main"
+        mainStatusItem.isVisible = true
         configureMainStatusButton()
         rebuildMetricStatusItems()
         configurePopover()
@@ -89,6 +91,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         for kind in visibleMetricKinds.reversed() {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            item.autosaveName = "SilBar.metric.\(kind.rawValue)"
+            item.isVisible = true
+
             let hostingView = NSHostingView(rootView: StatusBarMetricContent(kind: kind, snapshot: monitor.snapshot))
             guard let button = item.button else {
                 continue
@@ -183,6 +188,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
             metricItem.hostingView.rootView = StatusBarMetricContent(kind: kind, snapshot: snapshot)
             metricItem.hostingView.layoutSubtreeIfNeeded()
+            metricItem.item.isVisible = true
 
             let fittingWidth = metricItem.hostingView.fittingSize.width
             metricItem.item.length = max(kind.minimumWidth, fittingWidth + 8)
