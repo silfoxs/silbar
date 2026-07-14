@@ -61,6 +61,7 @@ struct ClipboardPopoverView: View {
                     }
                 }
             }
+            .id(store.presentationID)
             .scrollIndicators(.hidden)
         }
     }
@@ -82,22 +83,14 @@ private struct ClipboardHistoryRow: View {
     let entry: ClipboardEntry
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(entry.text)
-                    .font(.system(size: 15))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            Image(systemName: "doc.on.doc")
-                .font(.callout.weight(.medium))
-                .foregroundStyle(.secondary)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+        Text(entry.text)
+            .font(.system(size: 15))
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
     }
 }

@@ -370,6 +370,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func showClipboardPopover(relativeTo button: NSStatusBarButton) {
+        clipboardHistory.prepareForPresentation()
         activePopoverID = ObjectIdentifier(clipboardPopover)
         closeOtherPopovers(except: clipboardPopover)
         clipboardPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)

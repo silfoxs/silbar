@@ -9,6 +9,7 @@ struct ClipboardEntry: Identifiable {
 @MainActor
 final class ClipboardHistoryStore: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
+    @Published private(set) var presentationID = UUID()
 
     private let pasteboard: NSPasteboard
     private var lastChangeCount: Int
@@ -26,6 +27,10 @@ final class ClipboardHistoryStore: ObservableObject {
         pasteboard.setString(entry.text, forType: .string)
         lastChangeCount = pasteboard.changeCount
         record(entry.text)
+    }
+
+    func prepareForPresentation() {
+        presentationID = UUID()
     }
 
     private func startMonitoring() {
