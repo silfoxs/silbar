@@ -5,12 +5,16 @@ import SwiftUI
 @MainActor
 final class StatusBarController: NSObject, NSPopoverDelegate {
     private let monitor: SystemMonitor
+    private let clipboardHistory: ClipboardHistoryStore
+    private let clipboardStatusItem: NSStatusItem
     private let mainStatusItem: NSStatusItem
     private let popover = NSPopover()
     private let networkPopover = NSPopover()
     private let cpuPopover = NSPopover()
     private let tempPopover = NSPopover()
     private let memoryPopover = NSPopover()
+    private let clipboardPopover = NSPopover()
+    private let clipboardHostingView: NSHostingView<ClipboardStatusIcon>
     private let mainHostingView: NSHostingView<MainStatusIcon>
     private var metricItems: [StatusBarMetricKind: MetricStatusItem] = [:]
     private var visibleMetricKinds: [StatusBarMetricKind] = []
@@ -24,11 +28,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
     init(monitor: SystemMonitor) {
         self.monitor = monitor
+        clipboardHistory = ClipboardHistoryStore()
+        clipboardStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         mainStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        clipboardHostingView = NSHostingView(rootView: ClipboardStatusIcon())
         mainHostingView = NSHostingView(rootView: MainStatusIcon())
 
         super.init()
 
+        configureClipboardStatusButton()
         mainStatusItem.autosaveName = "SilBar.main"
         mainStatusItem.isVisible = true
         configureMainStatusButton()
@@ -38,6 +46,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         configureCPUPopover(cpuPopover)
         configureCPUPopover(tempPopover)
         configureMemoryPopover()
+        configureClipboardPopover()
         updateStatusItems(with: monitor.snapshot)
 
         snapshotCancellable = monitor.$snapshot.sink { [weak self] snapshot in
@@ -79,6 +88,29 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         mainHostingView.layoutSubtreeIfNeeded()
         mainStatusItem.length = max(28, mainHostingView.fittingSize.width + 8)
+    }
+
+    private func configureClipboardStatusButton() {
+        clipboardStatusItem.autosaveName = "SilBar.clipboard"
+        clipboardStatusItem.isVisible = StatusBarPreferences.isClipboardHistoryEnabled()
+
+        guard let button = clipboardStatusItem.button else {
+            return
+        }
+
+        button.title = ""
+        button.image = nil
+        button.target = self
+        button.action = #selector(toggleClipboardPopover(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+
+        clipboardHostingView.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(clipboardHostingView)
+
+        NSLayoutConstraint.activate([
+            clipboardHostingView.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+            clipboardHostingView.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+        ])
     }
 
     private func rebuildMetricStatusItems() {
@@ -175,7 +207,22 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         )
     }
 
+    private func configureClipboardPopover() {
+        clipboardPopover.behavior = .transient
+        clipboardPopover.delegate = self
+        clipboardPopover.contentSize = NSSize(width: 430, height: 620)
+        clipboardPopover.contentViewController = NSHostingController(
+            rootView: ClipboardPopoverView(store: clipboardHistory) { [weak self] entry in
+                self?.clipboardHistory.copy(entry)
+            }
+            .frame(width: 430)
+            .containerBackground(.clear, for: .window)
+        )
+    }
+
     private func updateStatusItems(with snapshot: MetricSnapshot) {
+        clipboardStatusItem.isVisible = StatusBarPreferences.isClipboardHistoryEnabled()
+
         let currentKinds = currentVisibleMetricKinds()
         if currentKinds != visibleMetricKinds {
             rebuildMetricStatusItems()
@@ -255,6 +302,19 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         showMemoryPopover(relativeTo: memoryItem)
     }
 
+    @objc private func toggleClipboardPopover(_ sender: Any?) {
+        if clipboardPopover.isShown {
+            closeClipboardPopover(sender)
+            return
+        }
+
+        guard let clipboardItem = clipboardStatusItem.button else {
+            return
+        }
+
+        showClipboardPopover(relativeTo: clipboardItem)
+    }
+
     private func showPopover(relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
@@ -309,6 +369,24 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         stopPopoverCloseObserversIfActive(memoryPopover)
     }
 
+    private func showClipboardPopover(relativeTo button: NSStatusBarButton) {
+        activePopoverID = ObjectIdentifier(clipboardPopover)
+        closeOtherPopovers(except: clipboardPopover)
+        clipboardPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        configureTransparentWindow(for: clipboardPopover)
+        startClipboardPopoverCloseObservers()
+    }
+
+    private func closeClipboardPopover(_ sender: Any?) {
+        guard clipboardPopover.isShown else {
+            stopPopoverCloseObserversIfActive(clipboardPopover)
+            return
+        }
+
+        clipboardPopover.performClose(sender)
+        stopPopoverCloseObserversIfActive(clipboardPopover)
+    }
+
     private func showCPUPopover(_ popover: NSPopover, relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
@@ -341,7 +419,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func closeOtherPopovers(except activePopover: NSPopover?, _ sender: Any? = nil) {
-        for popover in [popover, networkPopover, cpuPopover, tempPopover, memoryPopover] where popover !== activePopover && popover.isShown {
+        for popover in [popover, networkPopover, cpuPopover, tempPopover, memoryPopover, clipboardPopover] where popover !== activePopover && popover.isShown {
             popover.performClose(sender)
         }
     }
@@ -370,6 +448,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self.stopPopoverCloseObservers()
                 self.stopNetworkPopoverCloseObservers()
                 self.stopCPUPopoverCloseObservers()
+                self.stopMemoryPopoverCloseObservers()
+                self.stopClipboardPopoverCloseObservers()
                 self.activePopoverID = nil
                 return
             }
@@ -388,6 +468,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 }
             } else if closedPopoverID == ObjectIdentifier(self.memoryPopover) {
                 self.stopMemoryPopoverCloseObservers()
+            } else if closedPopoverID == ObjectIdentifier(self.clipboardPopover) {
+                self.stopClipboardPopoverCloseObservers()
             }
 
             if !self.isAnyPopoverShown {
@@ -616,6 +698,61 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         statusVisibilityTimer = nil
     }
 
+    private func startClipboardPopoverCloseObservers() {
+        stopClipboardPopoverCloseObservers()
+
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            Task { @MainActor in
+                self?.closeClipboardPopoverIfNeeded(for: event)
+            }
+            return event
+        }
+
+        globalEventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeClipboardPopover(nil)
+            }
+        }
+
+        resignActiveObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeClipboardPopover(nil)
+            }
+        }
+
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.closeClipboardPopoverIfStatusItemHidden()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        statusVisibilityTimer = timer
+    }
+
+    private func stopClipboardPopoverCloseObservers() {
+        if let localEventMonitor {
+            NSEvent.removeMonitor(localEventMonitor)
+            self.localEventMonitor = nil
+        }
+
+        if let globalEventMonitor {
+            NSEvent.removeMonitor(globalEventMonitor)
+            self.globalEventMonitor = nil
+        }
+
+        if let resignActiveObserver {
+            NotificationCenter.default.removeObserver(resignActiveObserver)
+            self.resignActiveObserver = nil
+        }
+
+        statusVisibilityTimer?.invalidate()
+        statusVisibilityTimer = nil
+    }
+
     private func stopPopoverCloseObserversIfActive(_ popover: NSPopover) {
         guard activePopoverID == ObjectIdentifier(popover) else {
             return
@@ -629,6 +766,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             stopCPUPopoverCloseObservers()
         } else if popover === memoryPopover {
             stopMemoryPopoverCloseObservers()
+        } else if popover === clipboardPopover {
+            stopClipboardPopoverCloseObservers()
         }
 
         activePopoverID = nil
@@ -827,14 +966,66 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
     }
 
+    private func closeClipboardPopoverIfNeeded(for event: NSEvent) {
+        guard clipboardPopover.isShown else {
+            stopPopoverCloseObserversIfActive(clipboardPopover)
+            return
+        }
+
+        if isEventInsideClipboardStatusButton(event) || isEventInsideClipboardPopover(event) {
+            return
+        }
+
+        closeClipboardPopover(nil)
+    }
+
+    private func isEventInsideClipboardStatusButton(_ event: NSEvent) -> Bool {
+        guard
+            let button = clipboardStatusItem.button,
+            event.window === button.window
+        else {
+            return false
+        }
+
+        let point = button.convert(event.locationInWindow, from: nil)
+        return button.bounds.contains(point)
+    }
+
+    private func isEventInsideClipboardPopover(_ event: NSEvent) -> Bool {
+        guard let window = clipboardPopover.contentViewController?.view.window else {
+            return false
+        }
+
+        return event.window === window
+    }
+
+    private func closeClipboardPopoverIfStatusItemHidden() {
+        guard clipboardPopover.isShown else {
+            stopPopoverCloseObserversIfActive(clipboardPopover)
+            return
+        }
+
+        guard let window = clipboardStatusItem.button?.window, window.isVisible else {
+            closeClipboardPopover(nil)
+            return
+        }
+    }
+
     private var isAnyPopoverShown: Bool {
-        popover.isShown || networkPopover.isShown || isCPUPopoverShown || memoryPopover.isShown
+        popover.isShown || networkPopover.isShown || isCPUPopoverShown || memoryPopover.isShown || clipboardPopover.isShown
     }
 }
 
 private struct MetricStatusItem {
     let item: NSStatusItem
     let hostingView: NSHostingView<StatusBarMetricContent>
+}
+
+private struct ClipboardStatusIcon: View {
+    var body: some View {
+        Image(systemName: "clipboard")
+            .font(.system(size: 13, weight: .semibold))
+    }
 }
 
 private struct MainStatusIcon: View {

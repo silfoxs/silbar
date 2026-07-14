@@ -6,7 +6,12 @@ enum StatusBarPreferences {
     static let showCPUTemperature = "statusBar.showCPUTemperature"
     static let showMemoryUsage = "statusBar.showMemoryUsage"
     static let showStorageUsage = "statusBar.showStorageUsage"
+    static let showClipboardHistory = "statusBar.showClipboardHistory"
     static let metricOrder = "statusBar.metricOrder"
+
+    static func isClipboardHistoryEnabled(defaults: UserDefaults = .standard) -> Bool {
+        defaults.object(forKey: showClipboardHistory) as? Bool ?? true
+    }
 
     static func orderedMetricKinds(defaults: UserDefaults = .standard) -> [StatusBarMetricKind] {
         let savedKinds = defaults.stringArray(forKey: metricOrder) ?? []

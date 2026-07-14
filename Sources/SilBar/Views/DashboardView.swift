@@ -154,6 +154,7 @@ private struct SettingsView: View {
     @AppStorage(StatusBarPreferences.showCPUTemperature) private var showCPUTemperature = false
     @AppStorage(StatusBarPreferences.showMemoryUsage) private var showMemoryUsage = true
     @AppStorage(StatusBarPreferences.showStorageUsage) private var showStorageUsage = true
+    @AppStorage(StatusBarPreferences.showClipboardHistory) private var showClipboardHistory = true
     @State private var metricOrder = StatusBarPreferences.orderedMetricKinds()
     @State private var draggedKind: StatusBarMetricKind?
     @State private var dragStartIndex: Int?
@@ -178,6 +179,12 @@ private struct SettingsView: View {
                     .animation(.snappy(duration: 0.16), value: dragTargetIndex)
                     .simultaneousGesture(reorderGesture(for: kind))
                 }
+
+                SettingsToggleRow(
+                    title: "剪贴板历史",
+                    systemImage: "clipboard",
+                    isOn: $showClipboardHistory
+                )
             }
         }
         .padding(12)
@@ -291,6 +298,30 @@ private struct SettingsMetricRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Label(kind.title, systemImage: kind.systemImage)
+                .font(.callout.weight(.medium))
+
+            Spacer(minLength: 12)
+
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .frame(width: 54, alignment: .trailing)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+    }
+}
+
+private struct SettingsToggleRow: View {
+    let title: String
+    let systemImage: String
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(title, systemImage: systemImage)
                 .font(.callout.weight(.medium))
 
             Spacer(minLength: 12)
