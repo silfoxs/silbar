@@ -49,8 +49,17 @@ final class NetworkInterfaceSampler: @unchecked Sendable {
             let isUp = (flags & IFF_UP) == IFF_UP
             let isRunning = (flags & IFF_RUNNING) == IFF_RUNNING
             let isLoopback = (flags & IFF_LOOPBACK) == IFF_LOOPBACK
+            let isPointToPoint = (flags & IFF_POINTOPOINT) == IFF_POINTOPOINT
+            let isLinkAddress = interface.ifa_addr?.pointee.sa_family == UInt8(AF_LINK)
 
-            guard isUp, isRunning, !isLoopback, let data = interface.ifa_data else {
+            // TUN/VPN interfaces see the same traffic before it is sent through
+            // the physical interface. Counting both makes proxied traffic appear twice.
+            guard isUp,
+                  isRunning,
+                  !isLoopback,
+                  !isPointToPoint,
+                  isLinkAddress,
+                  let data = interface.ifa_data else {
                 continue
             }
 

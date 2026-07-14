@@ -92,7 +92,7 @@ final class ProcessSampler: @unchecked Sendable {
             previousNetworkCounters = counters
         }
 
-        let rows = counters.compactMap { name, current -> ProcessNetworkUsage? in
+        let processRows = counters.compactMap { name, current -> ProcessNetworkUsage? in
             guard let previous = previousNetworkCounters[name] else {
                 return nil
             }
@@ -100,16 +100,29 @@ final class ProcessSampler: @unchecked Sendable {
             let interval = max(current.timestamp.timeIntervalSince(previous.timestamp), 0.1)
             let downloadDelta = current.downloadBytes >= previous.downloadBytes ? current.downloadBytes - previous.downloadBytes : 0
             let uploadDelta = current.uploadBytes >= previous.uploadBytes ? current.uploadBytes - previous.uploadBytes : 0
+            let appName = current.pid.map {
+                appDisplayName(pid: $0, fallback: name)
+            } ?? displayName(from: name)
             let usage = ProcessNetworkUsage(
                 pid: current.pid,
-                name: displayName(from: name),
+                name: appName,
                 uploadBytesPerSecond: UInt64(Double(uploadDelta) / interval),
                 downloadBytesPerSecond: UInt64(Double(downloadDelta) / interval)
             )
 
             return usage.totalBytesPerSecond > 0 ? usage : nil
         }
-        .sorted { $0.totalBytesPerSecond > $1.totalBytesPerSecond }
+
+        let rows = Dictionary(grouping: processRows, by: \.name)
+            .map { name, processes in
+                ProcessNetworkUsage(
+                    pid: processes.first?.pid,
+                    name: name,
+                    uploadBytesPerSecond: processes.reduce(0) { $0 + $1.uploadBytesPerSecond },
+                    downloadBytesPerSecond: processes.reduce(0) { $0 + $1.downloadBytesPerSecond }
+                )
+            }
+            .sorted { $0.totalBytesPerSecond > $1.totalBytesPerSecond }
 
         return Array(rows.prefix(limit))
     }
