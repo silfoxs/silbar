@@ -215,7 +215,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             rootView: ClipboardPopoverView(store: clipboardHistory) { [weak self] entry in
                 self?.clipboardHistory.copy(entry)
             }
-            .frame(width: 430)
+            .frame(width: 430, height: 620, alignment: .top)
             .containerBackground(.clear, for: .window)
         )
     }

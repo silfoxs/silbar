@@ -7,13 +7,16 @@ struct ClipboardPopoverView: View {
     @State private var confirmationTask: Task<Void, Never>?
 
     var body: some View {
-        GlassEffectContainer(spacing: 14) {
-            VStack(spacing: 14) {
-                header
-                history
-            }
-            .padding(14)
+        VStack(spacing: 0) {
+            header
+                .padding(.horizontal, 14)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+            history
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(MenuBarWindowBackgroundCleaner())
         .overlay(alignment: .bottom) {
             if showsCopyConfirmation {
@@ -46,9 +49,11 @@ struct ClipboardPopoverView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, minHeight: 120)
+                .padding(.horizontal, 14)
+                .padding(.top, 24)
                 .glassEffect(.regular, in: .rect(cornerRadius: 18))
         } else {
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 8) {
                     ForEach(store.entries) { entry in
                         Button {
@@ -61,8 +66,13 @@ struct ClipboardPopoverView: View {
                     }
                 }
             }
+            .contentMargins(.top, 8, for: .scrollContent)
+            .contentMargins(.bottom, 12, for: .scrollContent)
+            .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+            .scrollClipDisabled(false)
+            .clipped()
+            .padding(.horizontal, 14)
             .id(store.presentationID)
-            .scrollIndicators(.hidden)
         }
     }
 
@@ -81,6 +91,7 @@ struct ClipboardPopoverView: View {
 
 private struct ClipboardHistoryRow: View {
     let entry: ClipboardEntry
+    @State private var isHovered = false
 
     var body: some View {
         Text(entry.text)
@@ -91,6 +102,11 @@ private struct ClipboardHistoryRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .contentShape(Rectangle())
-            .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 14))
+            .background {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(.primary.opacity(isHovered ? 0.08 : 0))
+            }
+            .onHover { isHovered = $0 }
+            .animation(.easeOut(duration: 0.12), value: isHovered)
     }
 }

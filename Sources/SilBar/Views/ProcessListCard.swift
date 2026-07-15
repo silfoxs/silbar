@@ -65,13 +65,13 @@ struct ProcessListCard: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, row.detailItems.isEmpty ? 6 : 7)
                         .frame(minHeight: row.detailItems.isEmpty ? 36 : 48)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+                        .lightBackground(cornerRadius: 14)
                     }
                 }
             }
         }
         .padding(12)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .lightBackground()
     }
 }
 

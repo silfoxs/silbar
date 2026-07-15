@@ -11,7 +11,7 @@ struct NetworkChartCard: View {
             BarChart(samples: snapshot.networkHistory)
                 .frame(height: 92)
                 .padding(10)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                .lightBackground(cornerRadius: 16)
 
             HStack {
                 SpeedBadge(label: "下载", value: ByteFormatter.speed(snapshot.downloadBytesPerSecond), color: .cyan)
@@ -19,7 +19,7 @@ struct NetworkChartCard: View {
             }
         }
         .padding(12)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .lightBackground()
     }
 }
 
@@ -91,6 +91,6 @@ private struct SpeedBadge: View {
         .font(.caption)
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: Capsule())
+        .lightCapsuleBackground()
     }
 }

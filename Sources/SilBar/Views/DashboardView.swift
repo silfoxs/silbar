@@ -189,7 +189,7 @@ private struct SettingsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .lightBackground()
     }
 
     private func binding(for kind: StatusBarMetricKind) -> Binding<Bool> {
@@ -310,7 +310,7 @@ private struct SettingsMetricRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .lightBackground(cornerRadius: 14)
     }
 }
 
@@ -334,7 +334,7 @@ private struct SettingsToggleRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity)
-        .glassEffect(.regular, in: .rect(cornerRadius: 14))
+        .lightBackground(cornerRadius: 14)
     }
 }
 

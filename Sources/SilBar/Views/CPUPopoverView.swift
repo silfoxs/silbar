@@ -29,7 +29,7 @@ struct CPUPopoverView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .lightBackground(cornerRadius: 8)
             }
         }
     }
@@ -55,7 +55,7 @@ struct CPUPopoverView: View {
             }
         }
         .padding(12)
-        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 18))
+        .lightBackground()
     }
 
     private var topCPUAppsSection: some View {
@@ -103,7 +103,7 @@ private struct CoreUsageCell: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: .rect(cornerRadius: 10))
+        .lightBackground(cornerRadius: 10)
     }
 
     private var usageColor: Color {

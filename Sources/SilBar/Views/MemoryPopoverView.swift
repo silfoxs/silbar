@@ -23,7 +23,7 @@ struct MemoryPopoverView: View {
                 .font(.callout.weight(.medium))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .glassEffect(.regular, in: .rect(cornerRadius: 8))
+                .lightBackground(cornerRadius: 8)
         }
     }
 
