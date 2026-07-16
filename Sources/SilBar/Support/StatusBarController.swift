@@ -23,7 +23,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
     private var resignActiveObserver: NSObjectProtocol?
-    private var statusVisibilityTimer: Timer?
+    private var popoverAnchorWindows: [ObjectIdentifier: NSPanel] = [:]
     private var activePopoverID: ObjectIdentifier?
 
     init(monitor: SystemMonitor) {
@@ -318,9 +318,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showPopover(relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        configureTransparentWindow(for: popover)
         startPopoverCloseObservers()
+        show(popover, relativeTo: button)
     }
 
     private func closePopover(_ sender: Any?) {
@@ -336,9 +335,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showNetworkPopover(relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(networkPopover)
         closeOtherPopovers(except: networkPopover)
-        networkPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        configureTransparentWindow(for: networkPopover)
         startNetworkPopoverCloseObservers()
+        show(networkPopover, relativeTo: button)
     }
 
     private func closeNetworkPopover(_ sender: Any?) {
@@ -354,9 +352,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showMemoryPopover(relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(memoryPopover)
         closeOtherPopovers(except: memoryPopover)
-        memoryPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        configureTransparentWindow(for: memoryPopover)
         startMemoryPopoverCloseObservers()
+        show(memoryPopover, relativeTo: button)
     }
 
     private func closeMemoryPopover(_ sender: Any?) {
@@ -373,9 +370,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         clipboardHistory.prepareForPresentation()
         activePopoverID = ObjectIdentifier(clipboardPopover)
         closeOtherPopovers(except: clipboardPopover)
-        clipboardPopover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        configureTransparentWindow(for: clipboardPopover)
         startClipboardPopoverCloseObservers()
+        show(clipboardPopover, relativeTo: button)
     }
 
     private func closeClipboardPopover(_ sender: Any?) {
@@ -391,14 +387,65 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     private func showCPUPopover(_ popover: NSPopover, relativeTo button: NSStatusBarButton) {
         activePopoverID = ObjectIdentifier(popover)
         closeOtherPopovers(except: popover)
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        configureTransparentWindow(for: popover)
         startCPUPopoverCloseObservers()
+        show(popover, relativeTo: button)
     }
 
-    private func configureTransparentWindow(for popover: NSPopover) {
+    private func show(_ popover: NSPopover, relativeTo button: NSStatusBarButton) {
+        let anchorView = fixedAnchorView(for: popover, relativeTo: button)
+        popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
         popover.contentViewController?.view.window?.isOpaque = false
         popover.contentViewController?.view.window?.backgroundColor = .clear
+    }
+
+    private func fixedAnchorView(for popover: NSPopover, relativeTo button: NSStatusBarButton) -> NSView {
+        guard let statusWindow = button.window else {
+            return button
+        }
+
+        let buttonFrameInWindow = button.convert(button.bounds, to: nil)
+        let buttonFrameOnScreen = statusWindow.convertToScreen(buttonFrameInWindow)
+        let popoverID = ObjectIdentifier(popover)
+        let anchorWindow = popoverAnchorWindows[popoverID] ?? makePopoverAnchorWindow(frame: buttonFrameOnScreen)
+
+        anchorWindow.setFrame(buttonFrameOnScreen, display: false)
+        anchorWindow.orderFrontRegardless()
+        popoverAnchorWindows[popoverID] = anchorWindow
+
+        return anchorWindow.contentView ?? button
+    }
+
+    private func makePopoverAnchorWindow(frame: NSRect) -> NSPanel {
+        let window = NSPanel(
+            contentRect: frame,
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.hidesOnDeactivate = false
+        window.isFloatingPanel = true
+        window.becomesKeyOnlyIfNeeded = true
+        window.level = .statusBar
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        return window
+    }
+
+    private func hidePopoverAnchor(for popover: NSPopover) {
+        hidePopoverAnchor(withID: ObjectIdentifier(popover))
+    }
+
+    private func hidePopoverAnchor(withID popoverID: ObjectIdentifier) {
+        popoverAnchorWindows[popoverID]?.orderOut(nil)
+    }
+
+    private func hideAllPopoverAnchors() {
+        for window in popoverAnchorWindows.values {
+            window.orderOut(nil)
+        }
     }
 
     private func closeCPUPopover(_ popover: NSPopover, _ sender: Any?) {
@@ -446,6 +493,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
         Task { @MainActor in
             guard let closedPopoverID else {
+                self.hideAllPopoverAnchors()
                 self.stopPopoverCloseObservers()
                 self.stopNetworkPopoverCloseObservers()
                 self.stopCPUPopoverCloseObservers()
@@ -454,6 +502,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self.activePopoverID = nil
                 return
             }
+
+            self.hidePopoverAnchor(withID: closedPopoverID)
 
             guard closedPopoverID == self.activePopoverID else {
                 return
@@ -504,14 +554,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.closePopover(nil)
             }
         }
-
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.closePopoverIfStatusItemHidden()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statusVisibilityTimer = timer
     }
 
     private func stopPopoverCloseObservers() {
@@ -530,8 +572,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self.resignActiveObserver = nil
         }
 
-        statusVisibilityTimer?.invalidate()
-        statusVisibilityTimer = nil
+        hidePopoverAnchor(for: popover)
     }
 
     private func startNetworkPopoverCloseObservers() {
@@ -559,14 +600,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.closeNetworkPopover(nil)
             }
         }
-
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.closeNetworkPopoverIfStatusItemHidden()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statusVisibilityTimer = timer
     }
 
     private func stopNetworkPopoverCloseObservers() {
@@ -585,8 +618,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self.resignActiveObserver = nil
         }
 
-        statusVisibilityTimer?.invalidate()
-        statusVisibilityTimer = nil
+        hidePopoverAnchor(for: networkPopover)
     }
 
     private func startCPUPopoverCloseObservers() {
@@ -614,14 +646,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.closeShownCPUPopovers(nil)
             }
         }
-
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.closeCPUPopoverIfStatusItemHidden()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statusVisibilityTimer = timer
     }
 
     private func stopCPUPopoverCloseObservers() {
@@ -640,8 +664,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self.resignActiveObserver = nil
         }
 
-        statusVisibilityTimer?.invalidate()
-        statusVisibilityTimer = nil
+        hidePopoverAnchor(for: cpuPopover)
+        hidePopoverAnchor(for: tempPopover)
     }
 
     private func startMemoryPopoverCloseObservers() {
@@ -669,14 +693,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.closeMemoryPopover(nil)
             }
         }
-
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.closeMemoryPopoverIfStatusItemHidden()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statusVisibilityTimer = timer
     }
 
     private func stopMemoryPopoverCloseObservers() {
@@ -695,8 +711,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self.resignActiveObserver = nil
         }
 
-        statusVisibilityTimer?.invalidate()
-        statusVisibilityTimer = nil
+        hidePopoverAnchor(for: memoryPopover)
     }
 
     private func startClipboardPopoverCloseObservers() {
@@ -724,14 +739,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
                 self?.closeClipboardPopover(nil)
             }
         }
-
-        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.closeClipboardPopoverIfStatusItemHidden()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        statusVisibilityTimer = timer
     }
 
     private func stopClipboardPopoverCloseObservers() {
@@ -750,8 +757,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             self.resignActiveObserver = nil
         }
 
-        statusVisibilityTimer?.invalidate()
-        statusVisibilityTimer = nil
+        hidePopoverAnchor(for: clipboardPopover)
     }
 
     private func stopPopoverCloseObserversIfActive(_ popover: NSPopover) {
@@ -807,18 +813,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         return event.window === window
     }
 
-    private func closePopoverIfStatusItemHidden() {
-        guard popover.isShown else {
-            stopPopoverCloseObserversIfActive(popover)
-            return
-        }
-
-        guard let window = mainStatusItem.button?.window, window.isVisible else {
-            closePopover(nil)
-            return
-        }
-    }
-
     private func closeNetworkPopoverIfNeeded(for event: NSEvent) {
         guard networkPopover.isShown else {
             stopPopoverCloseObserversIfActive(networkPopover)
@@ -850,18 +844,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         return event.window === window
-    }
-
-    private func closeNetworkPopoverIfStatusItemHidden() {
-        guard networkPopover.isShown else {
-            stopPopoverCloseObserversIfActive(networkPopover)
-            return
-        }
-
-        guard let window = metricItems[.network]?.item.button?.window, window.isVisible else {
-            closeNetworkPopover(nil)
-            return
-        }
     }
 
     private func closeCPUPopoverIfNeeded(for event: NSEvent) {
@@ -898,23 +880,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
             }
 
             return event.window === window
-        }
-    }
-
-    private func closeCPUPopoverIfStatusItemHidden() {
-        guard isCPUPopoverShown else {
-            if activePopoverID == ObjectIdentifier(cpuPopover) || activePopoverID == ObjectIdentifier(tempPopover) {
-                stopCPUPopoverCloseObservers()
-                activePopoverID = nil
-            }
-            return
-        }
-
-        let cpuButton = metricItems[.cpu]?.item.button
-        let tempButton = metricItems[.temp]?.item.button
-        guard let button = cpuButton ?? tempButton, let window = button.window, window.isVisible else {
-            closeShownCPUPopovers(nil)
-            return
         }
     }
 
@@ -955,18 +920,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         return event.window === window
     }
 
-    private func closeMemoryPopoverIfStatusItemHidden() {
-        guard memoryPopover.isShown else {
-            stopPopoverCloseObserversIfActive(memoryPopover)
-            return
-        }
-
-        guard let window = metricItems[.memory]?.item.button?.window, window.isVisible else {
-            closeMemoryPopover(nil)
-            return
-        }
-    }
-
     private func closeClipboardPopoverIfNeeded(for event: NSEvent) {
         guard clipboardPopover.isShown else {
             stopPopoverCloseObserversIfActive(clipboardPopover)
@@ -998,18 +951,6 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
 
         return event.window === window
-    }
-
-    private func closeClipboardPopoverIfStatusItemHidden() {
-        guard clipboardPopover.isShown else {
-            stopPopoverCloseObserversIfActive(clipboardPopover)
-            return
-        }
-
-        guard let window = clipboardStatusItem.button?.window, window.isVisible else {
-            closeClipboardPopover(nil)
-            return
-        }
     }
 
     private var isAnyPopoverShown: Bool {
