@@ -4,6 +4,7 @@ import SwiftUI
 struct DashboardView: View {
     let monitor: SystemMonitor
     @State private var page: DashboardPage = .metrics
+    @StateObject private var updateManager = UpdateManager()
 
     var body: some View {
         GlassEffectContainer(spacing: 14) {
@@ -49,7 +50,7 @@ struct DashboardView: View {
             MetricsPage(monitor: monitor)
                 .transition(Self.pageTransition)
         case .settings:
-            SettingsView()
+            SettingsView(updateManager: updateManager)
                 .transition(Self.pageTransition)
         }
     }
@@ -149,6 +150,7 @@ private struct MetricsPage: View {
 }
 
 private struct SettingsView: View {
+    @ObservedObject var updateManager: UpdateManager
     @AppStorage(StatusBarPreferences.showNetworkTransfer) private var showNetworkTransfer = true
     @AppStorage(StatusBarPreferences.showCPUUsage) private var showCPUUsage = true
     @AppStorage(StatusBarPreferences.showCPUTemperature) private var showCPUTemperature = false
@@ -163,28 +165,129 @@ private struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label("状态栏", systemImage: "menubar.rectangle")
-                .font(.headline)
+            VStack(alignment: .leading, spacing: 12) {
+                Label("状态栏", systemImage: "menubar.rectangle")
+                    .font(.headline)
 
-            VStack(spacing: 8) {
-                ForEach(metricOrder) { kind in
-                    SettingsMetricRow(
-                        kind: kind,
-                        isOn: binding(for: kind)
+                VStack(spacing: 8) {
+                    ForEach(metricOrder) { kind in
+                        SettingsMetricRow(
+                            kind: kind,
+                            isOn: binding(for: kind)
+                        )
+                        .contentShape(Rectangle())
+                        .opacity(draggedKind == kind ? 0.76 : 1)
+                        .offset(y: offset(for: kind))
+                        .zIndex(draggedKind == kind ? 1 : 0)
+                        .animation(.snappy(duration: 0.16), value: dragTargetIndex)
+                        .simultaneousGesture(reorderGesture(for: kind))
+                    }
+
+                    SettingsToggleRow(
+                        title: "剪贴板历史",
+                        systemImage: "clipboard",
+                        isOn: $showClipboardHistory
                     )
-                    .contentShape(Rectangle())
-                    .opacity(draggedKind == kind ? 0.76 : 1)
-                    .offset(y: offset(for: kind))
-                    .zIndex(draggedKind == kind ? 1 : 0)
-                    .animation(.snappy(duration: 0.16), value: dragTargetIndex)
-                    .simultaneousGesture(reorderGesture(for: kind))
                 }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .hoverableLightBackground()
 
-                SettingsToggleRow(
-                    title: "剪贴板历史",
-                    systemImage: "clipboard",
-                    isOn: $showClipboardHistory
-                )
+            updateSection
+        }
+        .overlay {
+            if let release = updateManager.pendingRelease {
+                updateConfirmation(for: release)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .animation(.easeOut(duration: 0.14), value: updateManager.pendingRelease?.id)
+    }
+
+    private func updateConfirmation(for release: UpdateManager.Release) -> some View {
+        ZStack {
+            Color.black.opacity(0.12)
+                .contentShape(Rectangle())
+
+            VStack(spacing: 12) {
+                Image(systemName: "arrow.down.app.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.blue)
+
+                Text("发现新版本 \(release.version)")
+                    .font(.headline)
+
+                Text("当前版本为 \(updateManager.currentVersion)。是否立即下载并更新？")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+
+                HStack(spacing: 10) {
+                    Button("稍后") {
+                        updateManager.pendingRelease = nil
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button("更新") {
+                        updateManager.downloadAndInstall(release)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: 300)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+            .padding(24)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var updateSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Label("软件更新", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.callout.weight(.medium))
+
+                Spacer()
+
+                Text("v\(updateManager.currentVersion)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+
+                Button {
+                    Task {
+                        await updateManager.checkForUpdates()
+                    }
+                } label: {
+                    if updateManager.phase == .checking {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("检查更新")
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .disabled(updateManager.isBusy)
+            }
+
+            if updateManager.phase == .downloading {
+                VStack(alignment: .leading, spacing: 5) {
+                    ProgressView(value: updateManager.downloadProgress)
+                    Text("下载进度 \(Int((updateManager.downloadProgress * 100).rounded()))%")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            } else if updateManager.phase == .installing {
+                ProgressView(updateManager.statusMessage ?? "正在安装…")
+                    .font(.caption)
+            } else if let statusMessage = updateManager.statusMessage {
+                Text(statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(updateManager.phase == .failed ? .red : .secondary)
             }
         }
         .padding(12)

@@ -52,6 +52,17 @@ APP_BUILD_NUMBER=1
 APP_VERSION=1.2.3 APP_BUILD_NUMBER=42 ./script/build_and_run.sh package
 ```
 
+### 应用内更新
+
+设置页底部提供“检查更新”。应用会读取 `silfoxs/silbar` 最新的已发布 GitHub Release，选择与当前 Mac 架构匹配的 DMG，确认后显示下载进度，校验 SHA-256、应用标识、版本和代码签名，再替换当前应用并自动重启。
+
+发布新版本时需要满足：
+
+- Release 必须从 draft 正式发布；GitHub 的 latest release API 不会返回 draft。
+- Release tag 中需包含版本号，例如 `Silbar-v0.4.0`。
+- Release 需包含 `SilBar-<版本>-arm64.dmg`、`SilBar-<版本>-x86_64.dmg` 或 `SilBar-<版本>-universal.dmg`。
+- GitHub 仓库需允许未登录用户读取 Release；客户端不会内置私有仓库访问令牌。
+
 ## 使用
 
 运行 SilBar 后，它会出现在菜单栏中。点击图标即可查看系统状态面板。
