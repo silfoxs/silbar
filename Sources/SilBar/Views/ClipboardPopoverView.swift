@@ -94,9 +94,10 @@ private struct ClipboardHistoryRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        Text(entry.text)
+        Text(entry.preview)
             .font(.system(size: 15))
             .multilineTextAlignment(.leading)
+            .lineLimit(8)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)

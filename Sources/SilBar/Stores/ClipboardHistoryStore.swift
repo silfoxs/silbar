@@ -2,8 +2,27 @@ import AppKit
 import Combine
 
 struct ClipboardEntry: Identifiable {
+    private static let previewByteLimit = 4_096
+
     let id = UUID()
     let text: String
+    let preview: String
+
+    init(text: String) {
+        self.text = text
+
+        let utf8 = text.utf8
+        guard let previewEnd = utf8.index(
+            utf8.startIndex,
+            offsetBy: Self.previewByteLimit,
+            limitedBy: utf8.endIndex
+        ), previewEnd != utf8.endIndex else {
+            preview = text
+            return
+        }
+
+        preview = String(decoding: utf8[..<previewEnd], as: UTF8.self) + "\n…"
+    }
 }
 
 @MainActor

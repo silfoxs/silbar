@@ -71,7 +71,7 @@ struct ProcessListCard: View {
             }
         }
         .padding(12)
-        .lightBackground()
+        .hoverableLightBackground()
     }
 }
 

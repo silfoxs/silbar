@@ -19,7 +19,7 @@ struct NetworkChartCard: View {
             }
         }
         .padding(12)
-        .lightBackground()
+        .hoverableLightBackground()
     }
 }
 

@@ -55,7 +55,7 @@ struct CPUPopoverView: View {
             }
         }
         .padding(12)
-        .lightBackground()
+        .hoverableLightBackground()
     }
 
     private var topCPUAppsSection: some View {

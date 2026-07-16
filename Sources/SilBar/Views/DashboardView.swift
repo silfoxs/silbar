@@ -189,7 +189,7 @@ private struct SettingsView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .lightBackground()
+        .hoverableLightBackground()
     }
 
     private func binding(for kind: StatusBarMetricKind) -> Binding<Bool> {
